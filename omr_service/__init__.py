@@ -1,0 +1,1 @@
+"""ASC OMR recognition service."""

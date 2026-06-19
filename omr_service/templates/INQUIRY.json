@@ -1,0 +1,27 @@
+{
+  "templateType": "INQUIRY",
+  "subjectName": "탐구",
+  "pageSize": { "width": 1225, "height": 1582 },
+  "questionCount": 40,
+  "choiceCount": 5,
+  "hasShortAnswer": false,
+  "answerGroups": [
+    {
+      "name": "제1선택 1~20",
+      "startQuestionNo": 1,
+      "endQuestionNo": 20,
+      "type": "choice",
+      "areaCoordinates": { "x": 170, "y": 760, "width": 930, "height": 180 },
+      "coordinateMap": { "firstX": 192, "stepX": 48, "choiceY": [903, 876, 849, 822, 795], "boxSize": 22 }
+    },
+    {
+      "name": "제2선택 21~40",
+      "startQuestionNo": 21,
+      "endQuestionNo": 40,
+      "type": "choice",
+      "areaCoordinates": { "x": 170, "y": 120, "width": 930, "height": 190 },
+      "coordinateMap": { "firstX": 192, "stepX": 48, "choiceY": [270, 243, 216, 189, 162], "boxSize": 22 }
+    }
+  ],
+  "shortAnswerMap": []
+}

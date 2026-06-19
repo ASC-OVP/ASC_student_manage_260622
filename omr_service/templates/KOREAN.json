@@ -1,0 +1,35 @@
+{
+  "templateType": "KOREAN",
+  "subjectName": "국어",
+  "pageSize": { "width": 1225, "height": 1582 },
+  "questionCount": 45,
+  "choiceCount": 5,
+  "hasShortAnswer": false,
+  "answerGroups": [
+    {
+      "name": "공통 1~20",
+      "startQuestionNo": 1,
+      "endQuestionNo": 20,
+      "type": "choice",
+      "areaCoordinates": { "x": 170, "y": 760, "width": 930, "height": 180 },
+      "coordinateMap": { "firstX": 192, "stepX": 48, "choiceY": [903, 876, 849, 822, 795], "boxSize": 22 }
+    },
+    {
+      "name": "공통 21~34",
+      "startQuestionNo": 21,
+      "endQuestionNo": 34,
+      "type": "choice",
+      "areaCoordinates": { "x": 170, "y": 560, "width": 670, "height": 180 },
+      "coordinateMap": { "firstX": 192, "stepX": 48, "choiceY": [704, 677, 650, 623, 596], "boxSize": 22 }
+    },
+    {
+      "name": "선택 35~45",
+      "startQuestionNo": 35,
+      "endQuestionNo": 45,
+      "type": "choice",
+      "areaCoordinates": { "x": 170, "y": 200, "width": 540, "height": 190 },
+      "coordinateMap": { "firstX": 192, "stepX": 48, "choiceY": [343, 316, 289, 262, 235], "boxSize": 22 }
+    }
+  ],
+  "shortAnswerMap": []
+}

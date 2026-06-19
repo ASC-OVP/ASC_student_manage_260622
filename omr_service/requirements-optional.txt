@@ -1,0 +1,5 @@
+# Optional adapters. Install only after testing compatibility with the ASC OMR templates.
+# OMRChecker and FormScanner package names can vary by fork/distribution.
+opencv-python
+omrchecker
+formscanner

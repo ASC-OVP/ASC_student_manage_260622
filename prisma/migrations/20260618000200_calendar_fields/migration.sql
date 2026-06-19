@@ -1,0 +1,2 @@
+ALTER TABLE "ClassGroup" ADD COLUMN "room" TEXT;
+ALTER TABLE "Task" ADD COLUMN "startDate" DATETIME;

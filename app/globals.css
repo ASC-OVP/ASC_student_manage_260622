@@ -1,0 +1,90 @@
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background: #f3f4f6; color: #111827; font-family: Arial, Helvetica, sans-serif; }
+a { color: inherit; }
+input, textarea, select, button { font-family: inherit; }
+input, textarea, select { background: #fff; color: #111827; }
+table { color: #111827; }
+button { cursor: pointer; }
+
+.sidebar-link:focus,
+.sidebar-link:focus-visible,
+.sidebar-link:active,
+.sidebar-toggle:focus,
+.sidebar-toggle:focus-visible,
+.sidebar-toggle:active {
+  outline: none !important;
+  box-shadow: none !important;
+  border-left-color: transparent !important;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.fc {
+  --fc-border-color: #dfe3ea;
+  --fc-page-bg-color: #ffffff;
+  --fc-neutral-bg-color: #f8fafc;
+  --fc-today-bg-color: #eff6ff;
+  --fc-small-font-size: 12px;
+  color: #111827;
+  font-size: 13px;
+}
+
+.fc .fc-toolbar {
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.fc .fc-toolbar-title {
+  font-size: 18px;
+  font-weight: 950;
+}
+
+.fc .fc-button {
+  border: 1px solid #d1d5db;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #111827;
+  box-shadow: none;
+  font-size: 12px;
+  font-weight: 900;
+  padding: 6px 9px;
+}
+
+.fc .fc-button-primary:not(:disabled).fc-button-active,
+.fc .fc-button-primary:not(:disabled):active,
+.fc .fc-button-primary:hover {
+  border-color: #111827;
+  background: #111827;
+  color: #ffffff;
+}
+
+.fc .fc-col-header-cell {
+  background: #f8fafc;
+  font-weight: 950;
+}
+
+.fc .fc-daygrid-day-number,
+.fc .fc-col-header-cell-cushion {
+  color: #111827;
+  text-decoration: none;
+}
+
+.fc .fc-event {
+  border-radius: 6px;
+  border-width: 0;
+  cursor: pointer;
+  font-weight: 850;
+  padding: 1px 3px;
+}
+
+.fc .fc-daygrid-event {
+  margin: 2px 4px;
+}
+
+@media (max-width: 1100px) {
+  .fc .fc-toolbar {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+}

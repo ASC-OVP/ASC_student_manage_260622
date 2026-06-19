@@ -1,0 +1,49 @@
+{
+  "templateType": "MATH",
+  "subjectName": "수학",
+  "pageSize": { "width": 1225, "height": 1582 },
+  "questionCount": 30,
+  "choiceCount": 5,
+  "hasShortAnswer": true,
+  "answerGroups": [
+    {
+      "name": "공통 객관식 1~10",
+      "startQuestionNo": 1,
+      "endQuestionNo": 10,
+      "type": "choice",
+      "areaCoordinates": { "x": 170, "y": 760, "width": 480, "height": 180 },
+      "coordinateMap": { "firstX": 192, "stepX": 48, "choiceY": [903, 876, 849, 822, 795], "boxSize": 22 }
+    },
+    {
+      "name": "공통 객관식 11~15",
+      "startQuestionNo": 11,
+      "endQuestionNo": 15,
+      "type": "choice",
+      "areaCoordinates": { "x": 170, "y": 560, "width": 240, "height": 180 },
+      "coordinateMap": { "firstX": 192, "stepX": 48, "choiceY": [704, 677, 650, 623, 596], "boxSize": 22 }
+    },
+    {
+      "name": "선택 객관식 23~28",
+      "startQuestionNo": 23,
+      "endQuestionNo": 28,
+      "type": "choice",
+      "areaCoordinates": { "x": 690, "y": 340, "width": 280, "height": 180 },
+      "coordinateMap": { "firstX": 720, "stepX": 48, "choiceY": [489, 462, 435, 408, 381], "boxSize": 22 }
+    },
+    {
+      "name": "단답형 16~22",
+      "startQuestionNo": 16,
+      "endQuestionNo": 22,
+      "type": "short",
+      "areaCoordinates": { "x": 650, "y": 760, "width": 530, "height": 200 }
+    },
+    {
+      "name": "단답형 29~30",
+      "startQuestionNo": 29,
+      "endQuestionNo": 30,
+      "type": "short",
+      "areaCoordinates": { "x": 650, "y": 160, "width": 530, "height": 150 }
+    }
+  ],
+  "shortAnswerMap": []
+}
