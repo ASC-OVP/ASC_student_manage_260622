@@ -347,27 +347,17 @@ function ExamDetail({
   const keyByNo = new Map((exam.answerKeys as Array<{ questionNo: number; answer: string; score: number }>).map((key) => [key.questionNo, key]));
   const bulkFormId = `omr-bulk-${exam.id}`;
 
-  async function recognizeSelectedAction(formData: FormData) {
+  async function bulkOmrAction(formData: FormData) {
     "use server";
-    formData.set("scope", "selected");
-    return recognizeSelectedOmrUploadsAction(formData);
-  }
+    const intent = String(formData.get("intent") ?? "");
+    const [action, scope = "selected"] = intent.split(":");
 
-  async function recognizeAllAction(formData: FormData) {
-    "use server";
-    formData.set("scope", "all");
-    return recognizeSelectedOmrUploadsAction(formData);
-  }
+    formData.set("scope", scope === "all" ? "all" : "selected");
 
-  async function gradeSelectedAction(formData: FormData) {
-    "use server";
-    formData.set("scope", "selected");
-    return gradeSelectedOmrUploadsAction(formData);
-  }
+    if (action === "recognize") {
+      return recognizeSelectedOmrUploadsAction(formData);
+    }
 
-  async function gradeAllAction(formData: FormData) {
-    "use server";
-    formData.set("scope", "all");
     return gradeSelectedOmrUploadsAction(formData);
   }
 
@@ -402,16 +392,16 @@ function ExamDetail({
       </section>
 
       <section style={card}>
-        <form id={bulkFormId}>
+        <form id={bulkFormId} action={bulkOmrAction}>
           <input type="hidden" name="examId" value={exam.id} />
         </form>
         <div style={sectionHead}>
           <h2 style={sectionTitle}>학생별 결과 요약</h2>
           <div style={inlineForm}>
-            <button type="submit" form={bulkFormId} formAction={recognizeSelectedAction} style={secondaryButton} disabled={exam.uploads.length === 0}>선택 인식</button>
-            <button type="submit" form={bulkFormId} formAction={recognizeAllAction} style={smallButton} disabled={exam.uploads.length === 0}>전체 인식</button>
-            <button type="submit" form={bulkFormId} formAction={gradeSelectedAction} style={secondaryButton} disabled={exam.uploads.length === 0}>선택 채점/등록</button>
-            <button type="submit" form={bulkFormId} formAction={gradeAllAction} style={secondaryButton} disabled={exam.uploads.length === 0}>전체 채점/등록</button>
+            <button type="submit" form={bulkFormId} name="intent" value="recognize:selected" style={secondaryButton} disabled={exam.uploads.length === 0}>선택 인식</button>
+            <button type="submit" form={bulkFormId} name="intent" value="recognize:all" style={smallButton} disabled={exam.uploads.length === 0}>전체 인식</button>
+            <button type="submit" form={bulkFormId} name="intent" value="grade:selected" style={secondaryButton} disabled={exam.uploads.length === 0}>선택 채점/등록</button>
+            <button type="submit" form={bulkFormId} name="intent" value="grade:all" style={secondaryButton} disabled={exam.uploads.length === 0}>전체 채점/등록</button>
           </div>
         </div>
         <div style={tableWrap}>
