@@ -10,11 +10,11 @@ import { prisma } from "@/lib/prisma";
 import { ExamResultStatus, OmrAnswerStatus, OmrTemplateType } from "@/lib/generated/prisma";
 import { recognizeWithPythonOmr, type PythonOmrAnswer } from "@/lib/omrPythonClient";
 import { getOmrTemplate, omrTemplateList } from "@/lib/omrTemplates";
+import { OMR_MAX_BATCH_BYTES, OMR_MAX_FILE_BYTES } from "@/lib/omrUploadLimits";
 import { recordActivity } from "@/lib/activityLog";
 
 const ANSWER_STATUSES = Object.values(OmrAnswerStatus) as OmrAnswerStatus[];
 const TEMPLATE_TYPES = omrTemplateList.map((template) => template.type);
-const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 const OMR_UPLOAD_STATUSES = {
   WAITING: "WAITING",
   NEEDS_PHONE: "NEEDS_PHONE",
@@ -87,6 +87,16 @@ function normalizePhoneRecognizeStatus(status?: string | null, last8?: string | 
 
 function withoutRecognitionNotes(value: string | null | undefined) {
   return value?.replace(/\n?Recognition (error|log): [\s\S]+$/i, "") || undefined;
+}
+
+function omrHref(examId: string, params?: Record<string, string | number | null | undefined>) {
+  const searchParams = new URLSearchParams({ examId });
+  for (const [key, value] of Object.entries(params ?? {})) {
+    if (value !== null && value !== undefined && value !== "") {
+      searchParams.set(key, String(value));
+    }
+  }
+  return `/omr?${searchParams.toString()}`;
 }
 
 function mapPythonStatus(status: PythonOmrAnswer["status"]) {
@@ -267,13 +277,22 @@ export async function uploadOmrAction(formData: FormData) {
 
   if (!exam) return;
 
+  const totalUploadBytes = files.reduce((sum, file) => sum + file.size, 0);
+  if (totalUploadBytes > OMR_MAX_BATCH_BYTES) {
+    redirect(omrHref(exam.id, { uploadError: "batch-too-large" }));
+  }
+
   const uploadDir = path.join(process.cwd(), "public", "uploads", "omr");
   await mkdir(uploadDir, { recursive: true });
 
   let firstUploadId: string | null = null;
+  let skippedLargeFiles = 0;
 
   for (const [index, file] of files.entries()) {
-    if (file.size > MAX_UPLOAD_BYTES) continue;
+    if (file.size > OMR_MAX_FILE_BYTES) {
+      skippedLargeFiles += 1;
+      continue;
+    }
 
     const storedFileName = sanitizeFileName(file.name || "omr-upload");
     const diskPath = path.join(uploadDir, storedFileName);
@@ -313,6 +332,10 @@ export async function uploadOmrAction(formData: FormData) {
     firstUploadId ??= upload.id;
   }
 
+  if (!firstUploadId && skippedLargeFiles > 0) {
+    redirect(omrHref(exam.id, { uploadError: "file-too-large", skipped: skippedLargeFiles }));
+  }
+
   await recordActivity({
     actor: user,
     action: "CREATE",
@@ -323,7 +346,11 @@ export async function uploadOmrAction(formData: FormData) {
   });
 
   revalidatePath("/omr");
-  redirect(firstUploadId ? `/omr?examId=${exam.id}&uploadId=${firstUploadId}` : `/omr?examId=${exam.id}`);
+  redirect(
+    firstUploadId
+      ? omrHref(exam.id, { uploadId: firstUploadId, uploadWarning: skippedLargeFiles > 0 ? "file-too-large" : null, skipped: skippedLargeFiles || null })
+      : omrHref(exam.id)
+  );
 }
 
 export async function updateOmrUploadMatchAction(formData: FormData) {

@@ -7,6 +7,7 @@ import { requireUser } from "@/lib/auth";
 import { todayKoreaDate } from "@/lib/date";
 import { ExamResultStatus, OmrAnswerStatus, OmrTemplateType } from "@/lib/generated/prisma";
 import { getOmrTemplate, omrTemplateList, type OmrTemplateQuestion } from "@/lib/omrTemplates";
+import { OMR_MAX_BATCH_LABEL, OMR_MAX_FILE_LABEL } from "@/lib/omrUploadLimits";
 import { prisma } from "@/lib/prisma";
 import {
   createExamAction,
@@ -30,6 +31,9 @@ type Props = {
     templateType?: string;
     status?: string;
     pageSize?: string;
+    uploadError?: string;
+    uploadWarning?: string;
+    skipped?: string;
   }>;
 };
 
@@ -112,6 +116,7 @@ export default async function OmrPage({ searchParams }: Props) {
   const templateFilter = sp.templateType ?? "";
   const statusFilter = sp.status ?? "";
   const pageSize = Number(sp.pageSize || 20);
+  const uploadNotice = uploadNoticeMessage(sp.uploadError, sp.uploadWarning, sp.skipped);
 
   const [exams, students, classGroups] = await Promise.all([
     prisma.exam.findMany({
@@ -184,6 +189,8 @@ export default async function OmrPage({ searchParams }: Props) {
           </div>
           <Link href="/omr?new=1" style={newButton}>+ OMR 검사</Link>
         </header>
+
+        {uploadNotice && <div style={uploadNotice.tone === "error" ? errorNotice : warningNotice}>{uploadNotice.message}</div>}
 
         <form style={filterBar}>
           <input name="q" defaultValue={q} placeholder="검사명 또는 과목 검색" style={filterInput} />
@@ -714,6 +721,29 @@ function StatusBadge({ children, tone = "gray" }: { children: ReactNode; tone?: 
   return <span style={{ ...badge, ...toneStyles[tone] }}>{children}</span>;
 }
 
+function uploadNoticeMessage(error?: string, warning?: string, skipped?: string) {
+  const skippedCount = Number(skipped || 0);
+  if (error === "batch-too-large") {
+    return {
+      tone: "error" as const,
+      message: `선택한 OMR 파일 총 용량이 너무 큽니다. 한 번에 최대 ${OMR_MAX_BATCH_LABEL}까지 가능하니 여러 번 나눠서 업로드해주세요.`,
+    };
+  }
+  if (error === "file-too-large") {
+    return {
+      tone: "error" as const,
+      message: `업로드 가능한 파일이 없습니다. 파일 1개 최대 용량은 ${OMR_MAX_FILE_LABEL}입니다.`,
+    };
+  }
+  if (warning === "file-too-large") {
+    return {
+      tone: "warning" as const,
+      message: `${skippedCount || "일부"}개 파일은 ${OMR_MAX_FILE_LABEL}를 초과해서 건너뛰었습니다. 업로드된 파일만 먼저 처리할 수 있습니다.`,
+    };
+  }
+  return null;
+}
+
 function Th({ children }: { children: ReactNode }) {
   return <th style={th}>{children}</th>;
 }
@@ -894,6 +924,8 @@ function studentLabel(student: StudentOption) {
 const page: CSSProperties = { minHeight: "100vh", background: "#f3f4f6", color: "#111827" };
 const container: CSSProperties = { maxWidth: 1480, margin: "0 auto", padding: 18, display: "flex", flexDirection: "column", gap: 12 };
 const topBar: CSSProperties = { display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, padding: 16 };
+const errorNotice: CSSProperties = { border: "1px solid #fecaca", borderRadius: 10, background: "#fef2f2", color: "#991b1b", padding: "10px 12px", fontSize: 13, fontWeight: 800 };
+const warningNotice: CSSProperties = { border: "1px solid #fde68a", borderRadius: 10, background: "#fffbeb", color: "#92400e", padding: "10px 12px", fontSize: 13, fontWeight: 800 };
 const eyebrow: CSSProperties = { margin: 0, color: "#2563eb", fontSize: 12, fontWeight: 950 };
 const title: CSSProperties = { margin: "3px 0", fontSize: 28, fontWeight: 950 };
 const desc: CSSProperties = { margin: 0, color: "#6b7280" };

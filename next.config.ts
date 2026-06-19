@@ -23,6 +23,8 @@ const nextConfig: NextConfig = {
   ],
   experimental: {
     serverActions: {
+      // OMR uploads are scanned PDFs/images, so keep this above the app batch limit.
+      bodySizeLimit: "200mb",
       allowedOrigins: [
         "192.168.*.*",
         "10.*.*.*",

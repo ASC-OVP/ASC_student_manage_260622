@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useFormStatus } from "react-dom";
 import type { CSSProperties } from "react";
 import { uploadOmrAction } from "@/app/omr/actions";
+import { formatOmrBytes, OMR_MAX_BATCH_BYTES, OMR_MAX_BATCH_LABEL, OMR_MAX_FILE_BYTES, OMR_MAX_FILE_LABEL } from "@/lib/omrUploadLimits";
 
 type ExamOption = {
   id: string;
@@ -18,6 +19,9 @@ type Props = {
 export default function OmrMultiUploadForm({ exams, selectedExamId }: Props) {
   const [files, setFiles] = useState<Array<{ name: string; size: number }>>([]);
   const totalSize = useMemo(() => files.reduce((sum, file) => sum + file.size, 0), [files]);
+  const hasOversizedFile = files.some((file) => file.size > OMR_MAX_FILE_BYTES);
+  const isBatchTooLarge = totalSize > OMR_MAX_BATCH_BYTES;
+  const isUploadBlocked = hasOversizedFile || isBatchTooLarge;
 
   return (
     <form action={uploadOmrAction} style={stack}>
@@ -45,24 +49,30 @@ export default function OmrMultiUploadForm({ exams, selectedExamId }: Props) {
         }}
       />
 
+      <p style={hintText}>
+        파일 1개 최대 {OMR_MAX_FILE_LABEL}, 한 번에 최대 {OMR_MAX_BATCH_LABEL}까지 업로드할 수 있습니다.
+      </p>
+
       {files.length > 0 && (
         <div style={fileList}>
           <div style={fileListHead}>
             <b>{files.length}개 파일</b>
-            <span>{formatBytes(totalSize)}</span>
+            <span style={isBatchTooLarge ? dangerText : undefined}>{formatOmrBytes(totalSize)}</span>
           </div>
           {files.map((file, index) => (
             <label key={`${file.name}-${index}`} style={fileRow}>
               <span style={fileName}>{file.name}</span>
               <input name={`phoneLast8-${index}`} placeholder="전화번호 뒤 8자리" style={phoneInput} inputMode="numeric" />
-              <small>{formatBytes(file.size)}</small>
+              <small style={file.size > OMR_MAX_FILE_BYTES ? dangerText : undefined}>{formatOmrBytes(file.size)}</small>
             </label>
           ))}
+          {hasOversizedFile && <p style={dangerText}>80MB를 넘는 파일이 있습니다. PDF를 흑백/저해상도로 다시 스캔하거나 파일을 나눠서 올려주세요.</p>}
+          {isBatchTooLarge && <p style={dangerText}>선택한 파일 총 용량이 너무 큽니다. 여러 번 나눠서 업로드해주세요.</p>}
         </div>
       )}
 
       <textarea name="memo" placeholder="메모" rows={2} style={{ ...input, resize: "vertical" }} />
-      <SubmitButton disabled={exams.length === 0} />
+      <SubmitButton disabled={exams.length === 0 || isUploadBlocked} />
     </form>
   );
 }
@@ -71,15 +81,9 @@ function SubmitButton({ disabled }: { disabled: boolean }) {
   const { pending } = useFormStatus();
   return (
     <button type="submit" disabled={disabled || pending} style={{ ...primaryButton, opacity: disabled || pending ? 0.55 : 1 }}>
-      {pending ? "업로드 중" : "선택 파일 업로드"}
+      {pending ? "업로드 중..." : "선택 파일 업로드"}
     </button>
   );
-}
-
-function formatBytes(size: number) {
-  if (size < 1024) return `${size}B`;
-  if (size < 1024 * 1024) return `${Math.round(size / 1024)}KB`;
-  return `${(size / 1024 / 1024).toFixed(1)}MB`;
 }
 
 const stack: CSSProperties = { display: "grid", gap: 9 };
@@ -90,3 +94,5 @@ const fileListHead: CSSProperties = { display: "flex", justifyContent: "space-be
 const fileRow: CSSProperties = { display: "grid", gridTemplateColumns: "minmax(0, 1fr) 150px 64px", gap: 6, alignItems: "center", fontSize: 12 };
 const fileName: CSSProperties = { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "#111827", fontWeight: 800 };
 const phoneInput: CSSProperties = { border: "1px solid #d1d5db", borderRadius: 6, padding: "6px 7px", fontSize: 12, minWidth: 0 };
+const hintText: CSSProperties = { margin: 0, color: "#6b7280", fontSize: 12, lineHeight: 1.45 };
+const dangerText: CSSProperties = { margin: 0, color: "#dc2626", fontSize: 12, fontWeight: 800 };
