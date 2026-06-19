@@ -4,7 +4,13 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import type { UserRole } from "@/lib/generated/prisma";
 
-const SESSION_COOKIE = "asc_user_id";
+export const SESSION_COOKIE = "asc_user_id";
+export const SESSION_COOKIE_OPTIONS = {
+  httpOnly: true,
+  sameSite: "lax" as const,
+  path: "/",
+  maxAge: 60 * 60 * 24 * 7,
+};
 
 export function hashPassword(password: string) {
   const salt = crypto.randomBytes(16).toString("hex");
@@ -25,12 +31,7 @@ export function verifyPassword(password: string, savedHash: string) {
 
 export async function setSession(userId: string) {
   const store = await cookies();
-  store.set(SESSION_COOKIE, userId, {
-    httpOnly: true,
-    sameSite: "lax",
-    path: "/",
-    maxAge: 60 * 60 * 24 * 7,
-  });
+  store.set(SESSION_COOKIE, userId, SESSION_COOKIE_OPTIONS);
 }
 
 export async function clearSession() {

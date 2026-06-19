@@ -1,6 +1,5 @@
 import Link from "next/link";
 import type { CSSProperties } from "react";
-import { loginAction } from "./actions";
 
 type Props = { searchParams: Promise<{ error?: string; created?: string }> };
 
@@ -16,7 +15,7 @@ export default async function LoginPage({ searchParams }: Props) {
         {params.error === "invalid" && <p style={error}>강사팀 코드, 아이디 또는 비밀번호가 올바르지 않습니다.</p>}
         {params.error === "empty" && <p style={error}>모든 항목을 입력해주세요.</p>}
 
-        <form action={loginAction} style={form}>
+        <form action="/api/login" method="post" style={form}>
           <label style={label}>
             강사팀 코드
             <input name="academyCode" placeholder="예: sm-science" required style={input} />
