@@ -205,7 +205,7 @@ export async function createExamAction(formData: FormData) {
       })
     : null;
   const title = [titleInput, examName].filter(Boolean).join(" / ");
-  const subject = [optionalText(formData, "subject") ?? template.subject, classGroup?.name].filter(Boolean).join(" / ");
+  const subject = optionalText(formData, "subject") ?? template.subject;
   const examDate = optionalText(formData, "examDate");
   const questionCount = intValue(text(formData, "questionCount"), template.questionCount, 1, template.questionCount);
   const answerKeys = template.questions
@@ -226,6 +226,7 @@ export async function createExamAction(formData: FormData) {
   const exam = await prisma.exam.create({
     data: {
       academyId: user.academyId,
+      classGroupId: classGroup?.id ?? null,
       title,
       subject,
       examDate,
@@ -247,7 +248,7 @@ export async function createExamAction(formData: FormData) {
   });
 
   revalidatePath("/omr");
-  redirect(`/omr?examId=${exam.id}`);
+  redirect(omrHref(exam.id, { mode: "answers" }));
 }
 
 export async function saveAnswerKeyAction(formData: FormData) {
@@ -291,7 +292,7 @@ export async function saveAnswerKeyAction(formData: FormData) {
   });
 
   revalidatePath("/omr");
-  redirect(`/omr?examId=${examId}`);
+  redirect(omrHref(examId, { mode: "answers" }));
 }
 
 export async function uploadOmrAction(formData: FormData) {
@@ -314,7 +315,7 @@ export async function uploadOmrAction(formData: FormData) {
 
   const totalUploadBytes = files.reduce((sum, file) => sum + file.size, 0);
   if (totalUploadBytes > OMR_MAX_BATCH_BYTES) {
-    redirect(omrHref(exam.id, { uploadError: "batch-too-large" }));
+    redirect(omrHref(exam.id, { mode: "upload", uploadError: "batch-too-large" }));
   }
 
   const uploadDir = path.join(process.cwd(), "public", "uploads", "omr");
@@ -363,22 +364,16 @@ export async function uploadOmrAction(formData: FormData) {
   }
 
   if (createdUploadIds.length === 0 && skippedLargeFiles > 0) {
-    redirect(omrHref(exam.id, { uploadError: "file-too-large", skipped: skippedLargeFiles }));
+    redirect(omrHref(exam.id, { mode: "upload", uploadError: "file-too-large", skipped: skippedLargeFiles }));
   }
 
   let recognizedCount = 0;
-  let gradedCount = 0;
   let failedCount = 0;
 
   for (const uploadId of createdUploadIds) {
     try {
       await recognizeOmrUploadInternal(uploadId, user.academyId);
       recognizedCount += 1;
-
-      if (exam.answerKeys.length > 0) {
-        const graded = await gradeOmrUploadInternal(uploadId, user.academyId);
-        if (graded) gradedCount += 1;
-      }
     } catch (error) {
       failedCount += 1;
       console.error(`OMR upload auto-processing failed for upload ${uploadId}`, error);
@@ -398,12 +393,13 @@ export async function uploadOmrAction(formData: FormData) {
     entityType: "OmrUpload",
     entityId: createdUploadIds[0] ?? null,
     summary: `OMR 업로드: ${files.length}개`,
-    metadata: { examId: exam.id, fileCount: files.length, recognizedCount, gradedCount, failedCount },
+    metadata: { examId: exam.id, fileCount: files.length, recognizedCount, failedCount },
   });
 
   revalidatePath("/omr");
   redirect(
     omrHref(exam.id, {
+      mode: "results",
       uploadWarning: skippedLargeFiles > 0 ? "file-too-large" : null,
       skipped: skippedLargeFiles || null,
     })
@@ -442,7 +438,7 @@ export async function updateOmrUploadMatchAction(formData: FormData) {
   `;
 
   revalidatePath("/omr");
-  redirect(upload.examId ? `/omr?examId=${upload.examId}&uploadId=${upload.id}` : `/omr?uploadId=${upload.id}`);
+  redirect(upload.examId ? `/omr?examId=${upload.examId}&mode=results&uploadId=${upload.id}` : `/omr?uploadId=${upload.id}`);
 }
 
 export async function updateOmrUploadSetupAction(formData: FormData) {
@@ -476,7 +472,7 @@ export async function updateOmrUploadSetupAction(formData: FormData) {
 
   const redirectExamId = nextExam?.id ?? upload.examId;
   revalidatePath("/omr");
-  redirect(redirectExamId ? `/omr?examId=${redirectExamId}&uploadId=${upload.id}` : `/omr?uploadId=${upload.id}`);
+  redirect(redirectExamId ? `/omr?examId=${redirectExamId}&mode=results&uploadId=${upload.id}` : `/omr?uploadId=${upload.id}`);
 }
 
 export async function deleteOmrUploadAction(formData: FormData) {
@@ -512,7 +508,58 @@ export async function deleteOmrUploadAction(formData: FormData) {
 
   const nextExamId = upload.examId ?? examId;
   revalidatePath("/omr");
-  redirect(nextExamId ? `/omr?examId=${nextExamId}` : "/omr");
+  redirect(nextExamId ? omrHref(nextExamId, { mode: "results" }) : "/omr");
+}
+
+export async function deleteExamAction(formData: FormData) {
+  const user = await requireUser();
+  if (!canManageExam(user.role)) return;
+
+  const examId = text(formData, "examId");
+  if (!examId) return;
+
+  const exam = await prisma.exam.findFirst({
+    where: { id: examId, academyId: user.academyId },
+    select: {
+      id: true,
+      title: true,
+      uploads: {
+        select: {
+          id: true,
+          filePath: true,
+          previewImagePath: true,
+        },
+      },
+    },
+  });
+
+  if (!exam) return;
+
+  await prisma.$transaction([
+    prisma.examResult.deleteMany({ where: { academyId: user.academyId, examId: exam.id } }),
+    prisma.examAnswerKey.deleteMany({ where: { examId: exam.id } }),
+    prisma.omrUpload.deleteMany({ where: { academyId: user.academyId, examId: exam.id } }),
+    prisma.exam.delete({ where: { id: exam.id } }),
+  ]);
+
+  const storedPaths = new Set(
+    exam.uploads
+      .flatMap((upload) => [upload.filePath, upload.previewImagePath])
+      .filter((filePath): filePath is string => Boolean(filePath))
+  );
+  await Promise.all([...storedPaths].map((filePath) => deleteStoredOmrFile(filePath)));
+
+  await recordActivity({
+    actor: user,
+    action: "DELETE",
+    entityType: "Exam",
+    entityId: exam.id,
+    summary: `OMR 검사 삭제: ${exam.title}`,
+    metadata: { uploadCount: exam.uploads.length, scoreRecordPolicy: "kept" },
+  });
+
+  revalidatePath("/omr");
+  redirect("/omr");
 }
 
 async function recognizeOmrUploadInternal(uploadId: string, academyId: string) {
@@ -637,22 +684,17 @@ export async function recognizeOmrAction(formData: FormData) {
   if (!uploadId) return;
 
   const result = await recognizeOmrUploadInternal(uploadId, user.academyId);
-  const graded = await gradeOmrUploadInternal(uploadId, user.academyId);
 
   await recordActivity({
     actor: user,
     action: "RECOGNIZE",
     entityType: "OmrUpload",
     entityId: uploadId,
-    summary: graded ? "OMR recognition and auto-grading" : "OMR recognition",
+    summary: "OMR recognition",
   });
 
   revalidatePath("/omr");
-  if (graded) {
-    revalidatePath("/students");
-    revalidatePath(`/students/${graded.studentId}`);
-  }
-  redirect(result.examId ? `/omr?examId=${result.examId}&uploadId=${result.uploadId}` : "/omr");
+  redirect(result.examId ? `/omr?examId=${result.examId}&mode=results&uploadId=${result.uploadId}` : "/omr");
 }
 
 export async function recognizeSelectedOmrUploadsAction(formData: FormData) {
@@ -663,7 +705,7 @@ export async function recognizeSelectedOmrUploadsAction(formData: FormData) {
 
   if (scope === "selected" && selectedIds.length === 0) {
     revalidatePath("/omr");
-    redirect(examId ? `/omr?examId=${examId}` : "/omr");
+    redirect(examId ? omrHref(examId, { mode: "results" }) : "/omr");
   }
 
   const uploads = await prisma.omrUpload.findMany({
@@ -676,13 +718,9 @@ export async function recognizeSelectedOmrUploadsAction(formData: FormData) {
     orderBy: { createdAt: "asc" },
   });
 
-  let gradedCount = 0;
-
   for (const upload of uploads) {
     try {
       await recognizeOmrUploadInternal(upload.id, user.academyId);
-      const graded = await gradeOmrUploadInternal(upload.id, user.academyId);
-      if (graded) gradedCount += 1;
     } catch (error) {
       console.error(`OMR recognition failed for upload ${upload.id}`, error);
       await prisma.omrUpload.update({ where: { id: upload.id }, data: { status: "MANUAL_REVIEW_READY" } });
@@ -699,12 +737,11 @@ export async function recognizeSelectedOmrUploadsAction(formData: FormData) {
     action: "RECOGNIZE",
     entityType: "OmrUpload",
     summary: `OMR 일괄 인식 실행: ${uploads.length}개`,
-    metadata: { examId: examId || null, uploadIds: uploads.map((upload) => upload.id), gradedCount },
+    metadata: { examId: examId || null, uploadIds: uploads.map((upload) => upload.id) },
   });
 
   revalidatePath("/omr");
-  if (gradedCount > 0) revalidatePath("/students");
-  redirect(examId ? `/omr?examId=${examId}` : "/omr");
+  redirect(examId ? omrHref(examId, { mode: "results" }) : "/omr");
 }
 
 export async function gradeOmrAction(formData: FormData) {
@@ -737,7 +774,7 @@ export async function gradeOmrAction(formData: FormData) {
   revalidatePath("/omr");
   revalidatePath("/students");
   revalidatePath(`/students/${result.studentId}`);
-  redirect(`/omr?examId=${result.examId}&uploadId=${uploadId}`);
+  redirect(`/omr?examId=${result.examId}&mode=results&uploadId=${uploadId}`);
 }
 
 export async function gradeSelectedOmrUploadsAction(formData: FormData) {
@@ -748,7 +785,7 @@ export async function gradeSelectedOmrUploadsAction(formData: FormData) {
 
   if (scope === "selected" && selectedIds.length === 0) {
     revalidatePath("/omr");
-    redirect(examId ? `/omr?examId=${examId}` : "/omr");
+    redirect(examId ? omrHref(examId, { mode: "results" }) : "/omr");
   }
 
   const uploads = await prisma.omrUpload.findMany({
@@ -793,7 +830,7 @@ export async function gradeSelectedOmrUploadsAction(formData: FormData) {
 
   revalidatePath("/omr");
   revalidatePath("/students");
-  redirect(examId ? `/omr?examId=${examId}` : "/omr");
+  redirect(examId ? omrHref(examId, { mode: "results" }) : "/omr");
 }
 
 async function gradeOmrUploadInternal(uploadId: string, academyId: string, formData?: FormData) {
@@ -809,6 +846,7 @@ async function gradeOmrUploadInternal(uploadId: string, academyId: string, formD
 
   const template = getOmrTemplate(upload.templateType);
   if (!formData && exam.answerKeys.length === 0) return null;
+  if (!formData && upload.recognizedAnswers.length === 0) return null;
 
   const questions = template.questions.slice(0, exam.questionCount);
   const answerKeyByNo = new Map(exam.answerKeys.map((key) => [key.questionNo, key]));

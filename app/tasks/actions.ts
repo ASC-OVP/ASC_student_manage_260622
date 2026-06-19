@@ -6,10 +6,12 @@ import { Prisma, TaskPriority, TaskStatus, TaskType } from "@/lib/generated/pris
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { recordActivity } from "@/lib/activityLog";
+import { generateDueRecurringTasks } from "@/lib/recurringTasks";
 
 const TASK_STATUSES = Object.values(TaskStatus) as TaskStatus[];
 const TASK_PRIORITIES = Object.values(TaskPriority) as TaskPriority[];
 const TASK_TYPES = Object.values(TaskType) as TaskType[];
+const RECURRENCE_TYPES = ["DAILY", "WEEKLY", "MONTHLY"] as const;
 const SIMPLE_TASK_STATUSES: TaskStatus[] = [TaskStatus.TODO, TaskStatus.IN_PROGRESS, TaskStatus.DONE, TaskStatus.HOLD];
 const ASSISTANT_CHANGE_STATUSES: TaskStatus[] = [TaskStatus.IN_PROGRESS, TaskStatus.DONE, TaskStatus.HOLD];
 const REVIEWABLE_TASK_STATUSES: TaskStatus[] = [TaskStatus.SUBMITTED, TaskStatus.REVIEW];
@@ -41,6 +43,27 @@ function numberOrUndefined(value?: string) {
   if (!value) return undefined;
   const num = Number(value);
   return Number.isNaN(num) ? undefined : num;
+}
+
+function dateOnlyValue(value?: string) {
+  return value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : undefined;
+}
+
+function timeValue(value?: string) {
+  return value && /^\d{2}:\d{2}$/.test(value) ? value : undefined;
+}
+
+function dayOfMonthValue(value?: string) {
+  const day = Number(value);
+  return Number.isInteger(day) && day >= 1 && day <= 31 ? day : undefined;
+}
+
+function daysOfWeekValue(formData: FormData) {
+  return formData
+    .getAll("daysOfWeek")
+    .map((value) => String(value))
+    .filter((value) => /^[0-6]$/.test(value))
+    .join(",");
 }
 
 function parseDueDate(value?: string, time?: string) {
@@ -216,6 +239,179 @@ export async function createTaskAction(formData: FormData) {
     entityId: createdTaskId,
     summary: `업무 생성: ${title}`,
     metadata: { assigneeId, classGroupId: classGroup?.id ?? null, studentId: student?.id ?? null, priority, type },
+  });
+
+  revalidatePath("/tasks");
+  revalidatePath("/calendar");
+  redirect("/tasks");
+}
+
+export async function createRecurringTaskAction(formData: FormData) {
+  const user = await requireUser();
+  if (!canCreateTask(user.role)) redirect("/tasks?tab=recurring&error=permission");
+
+  const title = text(formData, "title");
+  const assigneeId = text(formData, "assigneeId");
+  const studentId = cleanId(optionalText(formData, "studentId"));
+  const classGroupId = cleanId(optionalText(formData, "classGroupId"));
+  const type = enumValue(optionalText(formData, "type"), TASK_TYPES, TaskType.OTHER);
+  const priority = enumValue(optionalText(formData, "priority"), TASK_PRIORITIES, TaskPriority.NORMAL);
+  const recurrenceType = enumValue(optionalText(formData, "recurrenceType"), RECURRENCE_TYPES, "WEEKLY");
+  const startDate = dateOnlyValue(optionalText(formData, "startDate"));
+  const endDate = dateOnlyValue(optionalText(formData, "endDate"));
+  const dueTime = timeValue(optionalText(formData, "dueTime"));
+  const dayOfMonth = dayOfMonthValue(optionalText(formData, "dayOfMonth"));
+  const daysOfWeek = daysOfWeekValue(formData);
+  const isActive = formData.get("isActive") !== "off";
+
+  if (!title || !assigneeId || !startDate) {
+    redirect("/tasks?tab=recurring&newRecurring=1&error=empty");
+  }
+
+  const [assignee, student, classGroup] = await Promise.all([
+    prisma.user.findFirst({ where: { id: assigneeId, academyId: user.academyId, isActive: true }, select: { id: true } }),
+    studentId ? prisma.student.findFirst({ where: { id: studentId, academyId: user.academyId }, select: { id: true } }) : null,
+    classGroupId ? prisma.classGroup.findFirst({ where: { id: classGroupId, academyId: user.academyId }, select: { id: true } }) : null,
+  ]);
+
+  if (!assignee) redirect("/tasks?tab=recurring&newRecurring=1&error=empty");
+
+  const recurringTask = await prisma.recurringTask.create({
+    data: {
+      academyId: user.academyId,
+      title,
+      description: optionalText(formData, "description"),
+      type,
+      assigneeId,
+      creatorId: user.id,
+      studentId: student?.id,
+      classGroupId: classGroup?.id,
+      priority,
+      recurrenceType,
+      daysOfWeek: recurrenceType === "WEEKLY" ? daysOfWeek || null : null,
+      dayOfMonth: recurrenceType === "MONTHLY" ? dayOfMonth ?? Number(startDate.slice(-2)) : null,
+      startDate,
+      endDate,
+      dueTime,
+      isActive,
+    },
+  });
+
+  await generateDueRecurringTasks(user);
+
+  await recordActivity({
+    actor: user,
+    action: "CREATE",
+    entityType: "RecurringTask",
+    entityId: recurringTask.id,
+    summary: `정기 업무 생성: ${title}`,
+    metadata: { assigneeId, classGroupId: classGroup?.id ?? null, studentId: student?.id ?? null, recurrenceType },
+  });
+
+  revalidatePath("/tasks");
+  revalidatePath("/calendar");
+  redirect("/tasks?tab=recurring");
+}
+
+export async function updateRecurringTaskAction(formData: FormData) {
+  const user = await requireUser();
+  if (!canCreateTask(user.role)) return;
+
+  const id = text(formData, "recurringTaskId");
+  if (!id) return;
+
+  const recurringTask = await prisma.recurringTask.findFirst({
+    where: { id, academyId: user.academyId },
+    include: { classGroup: { select: { teacherId: true } }, student: { select: { teacherId: true } } },
+  });
+  if (!recurringTask) return;
+  if (user.role === "TEACHER" && recurringTask.creatorId !== user.id && recurringTask.classGroup?.teacherId !== user.id && recurringTask.student?.teacherId !== user.id) return;
+
+  const title = text(formData, "title");
+  const assigneeId = text(formData, "assigneeId");
+  const startDate = dateOnlyValue(optionalText(formData, "startDate"));
+  if (!title || !assigneeId || !startDate) return;
+
+  const studentId = cleanId(optionalText(formData, "studentId"));
+  const classGroupId = cleanId(optionalText(formData, "classGroupId"));
+  const recurrenceType = enumValue(optionalText(formData, "recurrenceType"), RECURRENCE_TYPES, "WEEKLY");
+  const daysOfWeek = daysOfWeekValue(formData);
+  const dayOfMonth = dayOfMonthValue(optionalText(formData, "dayOfMonth"));
+
+  await prisma.recurringTask.update({
+    where: { id },
+    data: {
+      title,
+      description: optionalText(formData, "description"),
+      type: enumValue(optionalText(formData, "type"), TASK_TYPES, TaskType.OTHER),
+      assigneeId,
+      studentId,
+      classGroupId,
+      priority: enumValue(optionalText(formData, "priority"), TASK_PRIORITIES, TaskPriority.NORMAL),
+      recurrenceType,
+      daysOfWeek: recurrenceType === "WEEKLY" ? daysOfWeek || null : null,
+      dayOfMonth: recurrenceType === "MONTHLY" ? dayOfMonth ?? Number(startDate.slice(-2)) : null,
+      startDate,
+      endDate: dateOnlyValue(optionalText(formData, "endDate")),
+      dueTime: timeValue(optionalText(formData, "dueTime")),
+      isActive: formData.get("isActive") === "on",
+    },
+  });
+
+  await recordActivity({
+    actor: user,
+    action: "UPDATE",
+    entityType: "RecurringTask",
+    entityId: id,
+    summary: `정기 업무 수정: ${title}`,
+  });
+
+  revalidatePath("/tasks");
+  revalidatePath("/calendar");
+  redirect("/tasks?tab=recurring");
+}
+
+export async function toggleRecurringTaskAction(formData: FormData) {
+  const user = await requireUser();
+  if (!canCreateTask(user.role)) return;
+  const id = text(formData, "recurringTaskId");
+  const isActive = text(formData, "isActive") === "true";
+  if (!id) return;
+
+  const recurringTask = await prisma.recurringTask.findFirst({
+    where: { id, academyId: user.academyId },
+    select: { id: true, title: true, creatorId: true, classGroup: { select: { teacherId: true } } },
+  });
+  if (!recurringTask) return;
+  if (user.role === "TEACHER" && recurringTask.creatorId !== user.id && recurringTask.classGroup?.teacherId !== user.id) return;
+
+  await prisma.recurringTask.update({
+    where: { id },
+    data: { isActive },
+  });
+
+  await recordActivity({
+    actor: user,
+    action: "UPDATE",
+    entityType: "RecurringTask",
+    entityId: id,
+    summary: `정기 업무 ${isActive ? "활성화" : "비활성화"}: ${recurringTask.title}`,
+  });
+
+  revalidatePath("/tasks");
+  redirect("/tasks?tab=recurring");
+}
+
+export async function generateRecurringTasksAction() {
+  const user = await requireUser();
+  const createdCount = await generateDueRecurringTasks(user);
+
+  await recordActivity({
+    actor: user,
+    action: "CREATE",
+    entityType: "RecurringTask",
+    summary: `정기 업무 실제 업무 생성: ${createdCount}건`,
+    metadata: { createdCount },
   });
 
   revalidatePath("/tasks");

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { CSSProperties, ReactNode } from "react";
 import OmrCloseButton from "@/components/OmrCloseButton";
+import OmrExamDeleteButton from "@/components/OmrExamDeleteButton";
 import OmrMultiUploadForm from "@/components/OmrMultiUploadForm";
 import OmrUploadDeleteButton from "@/components/OmrUploadDeleteButton";
 import { requireUser } from "@/lib/auth";
@@ -11,6 +12,7 @@ import { OMR_MAX_BATCH_LABEL, OMR_MAX_FILE_LABEL } from "@/lib/omrUploadLimits";
 import { prisma } from "@/lib/prisma";
 import {
   createExamAction,
+  deleteExamAction,
   deleteOmrUploadAction,
   gradeOmrAction,
   gradeSelectedOmrUploadsAction,
@@ -24,9 +26,11 @@ type Props = {
   searchParams: Promise<{
     examId?: string;
     uploadId?: string;
+    mode?: string;
     new?: string;
     q?: string;
     date?: string;
+    classGroupId?: string;
     templateType?: string;
     status?: string;
     pageSize?: string;
@@ -46,6 +50,7 @@ const answerStatusOptions = [
 
 type StudentOption = { id: string; name: string; schoolName: string | null; grade: string | null; phone: string | null; parentPhone: string | null };
 type StudentBrief = { id: string; name: string; schoolName: string | null; grade: string | null };
+type ClassGroupLite = { id: string; name: string; subject: string | null; grade: string | null };
 type AnswerKeyLite = { questionNo: number; answer: string; score: number };
 type RecognizedAnswerLite = {
   questionNo: number;
@@ -87,6 +92,7 @@ type ExamUploadLite = {
 };
 type ExamWithUploads = {
   id: string;
+  classGroupId: string | null;
   title: string;
   subject: string | null;
   examDate: string | null;
@@ -112,14 +118,16 @@ export default async function OmrPage({ searchParams }: Props) {
   const canManageExam = user.role === "ADMIN" || user.role === "MANAGER" || user.role === "TEACHER";
   const q = sp.q?.trim() ?? "";
   const dateFilter = sp.date ?? "";
+  const classGroupFilter = sp.classGroupId ?? "";
   const templateFilter = sp.templateType ?? "";
   const statusFilter = sp.status ?? "";
   const pageSize = Number(sp.pageSize || 20);
   const uploadNotice = uploadNoticeMessage(sp.uploadError, sp.uploadWarning, sp.skipped);
+  const selectedMode = sp.mode ?? (sp.examId ? "results" : "");
 
   const [exams, students, classGroups] = await Promise.all([
     prisma.exam.findMany({
-      where: { academyId: user.academyId },
+      where: { academyId: user.academyId, ...(classGroupFilter ? { classGroupId: classGroupFilter } : {}) },
       orderBy: [{ createdAt: "desc" }],
       include: {
         answerKeys: true,
@@ -146,16 +154,22 @@ export default async function OmrPage({ searchParams }: Props) {
     }),
   ]);
 
+  const classGroupById = new Map(classGroups.map((classGroup) => [classGroup.id, classGroup]));
   const records = exams
-    .map((exam) => makeExamRecord(exam))
-    .filter((record) => !q || record.title.toLowerCase().includes(q.toLowerCase()) || record.subject.toLowerCase().includes(q.toLowerCase()))
+    .map((exam) => makeExamRecord(exam, classGroupById))
+    .filter((record) =>
+      !q ||
+      record.title.toLowerCase().includes(q.toLowerCase()) ||
+      record.subject.toLowerCase().includes(q.toLowerCase()) ||
+      record.classGroupName.toLowerCase().includes(q.toLowerCase())
+    )
     .filter((record) => !dateFilter || record.examDate === dateFilter)
     .filter((record) => !templateFilter || record.templateType === templateFilter)
     .filter((record) => !statusFilter || record.status === statusFilter)
     .slice(0, Number.isFinite(pageSize) ? pageSize : 20);
 
   const selectedExam = sp.examId ? exams.find((exam) => exam.id === sp.examId) ?? null : null;
-  const selectedRecord = selectedExam ? makeExamRecord(selectedExam) : null;
+  const selectedRecord = selectedExam ? makeExamRecord(selectedExam, classGroupById) : null;
   const selectedUpload = sp.uploadId
     ? await prisma.omrUpload.findFirst({
         where: { id: sp.uploadId, academyId: user.academyId },
@@ -174,7 +188,7 @@ export default async function OmrPage({ searchParams }: Props) {
   const recognizedByNo = new Map(selectedUpload?.recognizedAnswers.map((answer) => [answer.questionNo, answer]) ?? []);
   const latestResult = selectedUpload?.results[0] ?? null;
   const resultItemByNo = new Map(latestResult?.items.map((item) => [item.questionNo, item]) ?? []);
-  const closeUploadHref = selectedUpload?.examId ? `/omr?examId=${selectedUpload.examId}` : "/omr";
+  const closeUploadHref = selectedUpload?.examId ? `/omr?examId=${selectedUpload.examId}&mode=results` : "/omr";
   const showNewSheet = sp.new === "1";
 
   return (
@@ -194,6 +208,14 @@ export default async function OmrPage({ searchParams }: Props) {
         <form style={filterBar}>
           <input name="q" defaultValue={q} placeholder="검사명 또는 과목 검색" style={filterInput} />
           <input name="date" type="date" defaultValue={dateFilter} style={filterInput} />
+          <select name="classGroupId" defaultValue={classGroupFilter} style={filterSelect}>
+            <option value="">전체 반</option>
+            {classGroups.map((classGroup) => (
+              <option key={classGroup.id} value={classGroup.id}>
+                {classGroup.name}{classGroup.grade ? ` / ${classGroup.grade}` : ""}
+              </option>
+            ))}
+          </select>
           <select name="templateType" defaultValue={templateFilter} style={filterSelect}>
             <option value="">전체 템플릿</option>
             {omrTemplateList.map((template) => (
@@ -227,47 +249,58 @@ export default async function OmrPage({ searchParams }: Props) {
             <table style={table}>
               <thead>
                 <tr>
-                  <Th><input type="checkbox" aria-label="전체 선택" /></Th>
                   <Th>검사명 / 시험</Th>
+                  <Th>반</Th>
                   <Th>과목</Th>
-                  <Th>등록일</Th>
+                  <Th>날짜</Th>
                   <Th>상태</Th>
                   <Th>파일</Th>
                   <Th>매칭</Th>
                   <Th>인식</Th>
                   <Th>검수</Th>
-                  <Th>채점</Th>
                   <Th>평균</Th>
                   <Th>최고</Th>
                   <Th>등록</Th>
-                  <Th>결과</Th>
+                  <Th>관리</Th>
                 </tr>
               </thead>
               <tbody>
                 {records.map((record) => (
                   <tr key={record.id} style={selectedExam?.id === record.id ? selectedRow : undefined}>
-                    <Td><input type="checkbox" aria-label={`${record.title} selected`} /></Td>
                     <Td>
                       <b>{record.title}</b>
                       <div style={subText}>{templateLabel(record.templateType)} / {record.questionCount}문항</div>
                     </Td>
+                    <Td>{record.classGroupName || "-"}</Td>
                     <Td>{record.subject || "-"}</Td>
-                    <Td>{formatDate(record.createdAt)}</Td>
+                    <Td>
+                      {record.examDate ? formatDate(record.examDate) : "-"}
+                      <div style={subText}>생성 {formatDate(record.createdAt)}</div>
+                    </Td>
                     <Td><StatusBadge tone={recordTone(record.status)}>{recordStatusText(record.status)}</StatusBadge></Td>
                     <Td>{record.totalFiles}</Td>
                     <Td>{record.matchedCount}/{record.totalFiles}</Td>
                     <Td>{record.recognizedCount}/{record.totalFiles}</Td>
                     <Td>{record.reviewNeededCount}</Td>
-                    <Td>{record.gradedCount}/{record.totalFiles}</Td>
                     <Td>{record.averageScore === null ? "-" : `${record.averageScore}`}</Td>
                     <Td>{record.highScore === null ? "-" : `${record.highScore}`}</Td>
                     <Td>{record.registeredCount}</Td>
-                    <Td><Link href={`/omr?examId=${record.id}`} style={resultButton}>확인</Link></Td>
+                    <Td>
+                      <div style={actionLinks}>
+                        <Link href={`/omr?examId=${record.id}&mode=answers`} style={resultButton}>정답</Link>
+                        <Link href={`/omr?examId=${record.id}&mode=upload`} style={resultButton}>업로드</Link>
+                        <Link href={`/omr?examId=${record.id}&mode=results`} style={resultButton}>학생</Link>
+                        <form action={deleteExamAction} style={inlineDeleteForm}>
+                          <input type="hidden" name="examId" value={record.id} />
+                          <OmrExamDeleteButton examTitle={record.title} totalFiles={record.totalFiles} />
+                        </form>
+                      </div>
+                    </Td>
                   </tr>
                 ))}
                 {records.length === 0 && (
                   <tr>
-                    <td colSpan={14} style={emptyCell}>아직 OMR 검사 기록이 없습니다.</td>
+                    <td colSpan={13} style={emptyCell}>아직 OMR 검사 기록이 없습니다.</td>
                   </tr>
                 )}
               </tbody>
@@ -275,18 +308,17 @@ export default async function OmrPage({ searchParams }: Props) {
           </div>
         </section>
 
-        {selectedExam && selectedRecord && (
+        {selectedExam && selectedRecord && selectedMode === "results" && (
           <ExamDetail
             exam={selectedExam}
             record={selectedRecord}
             students={students}
-            canManageExam={canManageExam}
           />
         )}
       </section>
 
       {showNewSheet && (
-        <RightSheet title="새 OMR 검사" closeHref="/omr" wide>
+        <RightSheet title="새 OMR 검사" closeHref="/omr">
           <section style={sheetSection}>
             <h3 style={sheetTitle}>검사 만들기</h3>
             <form action={createExamAction} style={stack}>
@@ -314,9 +346,40 @@ export default async function OmrPage({ searchParams }: Props) {
                 </select>
               </div>
               <input name="questionCount" type="number" min={1} max={45} placeholder="문항 수" style={input} />
-              <CreateAnswerKeyGrid />
               <button style={primaryButton} disabled={!canManageExam}>검사 만들기</button>
             </form>
+          </section>
+        </RightSheet>
+      )}
+
+      {selectedExam && selectedMode === "answers" && (
+        <RightSheet title="정답 입력" closeHref="/omr" wide>
+          <section style={sheetSection}>
+            <div style={sectionHead}>
+              <div>
+                <h3 style={sheetTitle}>{selectedExam.title}</h3>
+                <p style={muted}>{selectedRecord?.classGroupName || "반 미지정"} / {selectedExam.subject || selectedTemplate.subject} / {selectedExam.questionCount}문항</p>
+              </div>
+              <StatusBadge tone={selectedExam.answerKeys.length > 0 ? "green" : "yellow"}>
+                {selectedExam.answerKeys.length > 0 ? "정답 입력됨" : "정답 필요"}
+              </StatusBadge>
+            </div>
+            <form action={saveAnswerKeyAction} style={stack}>
+              <input type="hidden" name="examId" value={selectedExam.id} />
+              <AnswerKeyGrid questions={selectedTemplate.questions.slice(0, selectedExam.questionCount)} keyByNo={keyByNo} />
+              <button style={primaryButton} disabled={!canManageExam}>정답 저장</button>
+            </form>
+          </section>
+        </RightSheet>
+      )}
+
+      {selectedExam && selectedMode === "upload" && (
+        <RightSheet title="OMR 파일 업로드" closeHref={`/omr?examId=${selectedExam.id}&mode=results`}>
+          <section style={sheetSection}>
+            <h3 style={sheetTitle}>{selectedExam.title}</h3>
+            <p style={muted}>{selectedRecord?.classGroupName || "반 미지정"} / {selectedExam.subject || selectedTemplate.subject} / {selectedExam.questionCount}문항</p>
+            <div style={divider} />
+            <OmrMultiUploadForm exams={[{ id: selectedExam.id, title: selectedExam.title }]} selectedExamId={selectedExam.id} />
           </section>
         </RightSheet>
       )}
@@ -343,16 +406,14 @@ function ExamDetail({
   exam,
   record,
   students,
-  canManageExam,
 }: {
   exam: ExamWithUploads;
   record: ExamRecord;
   students: StudentOption[];
-  canManageExam: boolean;
 }) {
   const template = getOmrTemplate(exam.templateType);
-  const keyByNo = new Map((exam.answerKeys as Array<{ questionNo: number; answer: string; score: number }>).map((key) => [key.questionNo, key]));
   const bulkFormId = `omr-bulk-${exam.id}`;
+  const canBulkRegister = exam.uploads.length > 0 && exam.answerKeys.length > 0;
 
   async function bulkOmrAction(formData: FormData) {
     "use server";
@@ -376,36 +437,19 @@ function ExamDetail({
             <h2 style={sectionTitle}>{exam.title}</h2>
             <p style={muted}>{exam.subject || template.subject} / {template.label} / {formatDate(exam.createdAt)}</p>
           </div>
-          <StatusBadge tone={recordTone(record.status)}>{recordStatusText(record.status)}</StatusBadge>
+          <div style={inlineForm}>
+            <Link href={`/omr?examId=${exam.id}&mode=answers`} style={lightButton}>정답</Link>
+            <Link href={`/omr?examId=${exam.id}&mode=upload`} style={smallButton}>파일 업로드</Link>
+            <StatusBadge tone={recordTone(record.status)}>{recordStatusText(record.status)}</StatusBadge>
+          </div>
         </div>
         <div style={miniStats}>
           <MiniStat label="파일" value={`${record.totalFiles}`} />
+          <MiniStat label="매칭" value={`${record.matchedCount}/${record.totalFiles}`} />
+          <MiniStat label="인식" value={`${record.recognizedCount}/${record.totalFiles}`} />
           <MiniStat label="검수 필요" value={`${record.reviewNeededCount}`} />
-          <MiniStat label="평균" value={record.averageScore === null ? "-" : `${record.averageScore}`} />
-          <MiniStat label="최고 / 최저" value={record.highScore === null ? "-" : `${record.highScore} / ${record.lowScore}`} />
           <MiniStat label="등록" value={`${record.registeredCount}`} />
         </div>
-      </section>
-
-      <section style={card}>
-        <details>
-          <summary style={summaryButton}>정답 입력</summary>
-          <form action={saveAnswerKeyAction} style={stack}>
-            <input type="hidden" name="examId" value={exam.id} />
-            <AnswerKeyGrid questions={template.questions.slice(0, exam.questionCount)} keyByNo={keyByNo} />
-            <button style={secondaryButton} disabled={!canManageExam}>정답 저장</button>
-          </form>
-        </details>
-      </section>
-
-      <section style={card}>
-        <div style={sectionHead}>
-          <div>
-            <h2 style={sectionTitle}>파일 업로드</h2>
-            <p style={muted}>PDF/이미지를 여러 개 올리면 전화번호 인식, 학생 매칭, 답안 인식, 자동 채점을 순서대로 시도합니다.</p>
-          </div>
-        </div>
-        <OmrMultiUploadForm exams={[{ id: exam.id, title: exam.title }]} selectedExamId={exam.id} />
       </section>
 
       <section style={card}>
@@ -416,7 +460,7 @@ function ExamDetail({
           <h2 style={sectionTitle}>학생별 결과 요약</h2>
           <div style={inlineForm}>
             <button type="submit" form={bulkFormId} name="intent" value="recognize:all" style={smallButton} disabled={exam.uploads.length === 0}>전체 인식</button>
-            <button type="submit" form={bulkFormId} name="intent" value="grade:all" style={secondaryButton} disabled={exam.uploads.length === 0}>전체 채점/등록</button>
+            <button type="submit" form={bulkFormId} name="intent" value="grade:all" style={secondaryButton} disabled={!canBulkRegister}>성적 일괄 등록</button>
           </div>
         </div>
         <div style={tableWrap}>
@@ -445,6 +489,11 @@ function ExamDetail({
                   (answer) => answer.status === OmrAnswerStatus.REVIEW_NEEDED || answer.status === OmrAnswerStatus.MULTIPLE
                 );
                 const reviewNeededCount = result?.reviewNeededCount ?? (reviewNeeded ? 1 : 0);
+                const canRegister = Boolean(
+                  exam.answerKeys.length > 0 &&
+                  upload.studentId &&
+                    (upload.recognizeStatus === "RECOGNIZED" || upload.recognizeStatus === "REVIEW_NEEDED")
+                );
                 return (
                   <tr key={upload.id}>
                     <Td>
@@ -456,7 +505,13 @@ function ExamDetail({
                       <div style={subText}>{phoneRecognizeStatusText(upload.phoneRecognizeStatus)}</div>
                     </Td>
                     <Td>
-                      {upload.student ? studentLabel(upload.student) : <span style={dangerText}>매칭 필요</span>}
+                      {upload.student ? (
+                        <Link href={`/omr?examId=${exam.id}&mode=results&uploadId=${upload.id}`} style={resultButton}>
+                          {studentLabel(upload.student)}
+                        </Link>
+                      ) : (
+                        <span style={dangerText}>매칭 필요</span>
+                      )}
                       <MatchMiniForm upload={upload} students={students} />
                     </Td>
                     <Td><StatusBadge tone={matchTone(upload.matchStatus)}>{matchStatusText(upload.matchStatus)}</StatusBadge></Td>
@@ -466,8 +521,8 @@ function ExamDetail({
                     <Td>{result?.wrongCount ?? "-"}</Td>
                     <Td>{result?.blankCount ?? "-"}</Td>
                     <Td>{reviewNeededCount}</Td>
-                    <Td><StatusBadge tone={result ? "green" : upload.studentId && upload.recognizeStatus === "RECOGNIZED" ? "yellow" : "gray"}>{result ? "등록 완료" : upload.studentId && upload.recognizeStatus === "RECOGNIZED" ? "등록 가능" : "대기"}</StatusBadge></Td>
-                    <Td><Link href={`/omr?examId=${exam.id}&uploadId=${upload.id}`} style={resultButton}>답안 확인</Link></Td>
+                    <Td><StatusBadge tone={result ? "green" : canRegister ? "yellow" : "gray"}>{result ? "등록 완료" : canRegister ? "등록 가능" : "대기"}</StatusBadge></Td>
+                    <Td><Link href={`/omr?examId=${exam.id}&mode=results&uploadId=${upload.id}`} style={resultButton}>답안 확인</Link></Td>
                     <Td>
                       <form action={deleteOmrUploadAction}>
                         <input type="hidden" name="uploadId" value={upload.id} />
@@ -620,16 +675,6 @@ function MatchMiniForm({ upload, students }: { upload: Pick<ExamUploadLite, "id"
   );
 }
 
-function CreateAnswerKeyGrid() {
-  const questions: OmrTemplateQuestion[] = Array.from({ length: 45 }, (_, index) => ({
-    no: index + 1,
-    section: "정답",
-    kind: "CHOICE",
-  }));
-
-  return <AnswerKeyGrid questions={questions} keyByNo={new Map()} />;
-}
-
 function AnswerKeyGrid({ questions, keyByNo }: { questions: OmrTemplateQuestion[]; keyByNo: Map<number, { answer: string; score: number }> }) {
   return (
     <div style={answerGrid}>
@@ -772,7 +817,8 @@ function Td({ children }: { children: ReactNode }) {
 type Tone = "gray" | "blue" | "green" | "yellow" | "red";
 type ExamRecord = ReturnType<typeof makeExamRecord>;
 
-function makeExamRecord(exam: ExamWithUploads) {
+function makeExamRecord(exam: ExamWithUploads, classGroupById: Map<string, ClassGroupLite>) {
+  const classGroup = exam.classGroupId ? classGroupById.get(exam.classGroupId) : null;
   const uploads = exam.uploads;
   const totalFiles = uploads.length;
   const matchedCount = uploads.filter((upload) => Boolean(upload.studentId)).length;
@@ -794,6 +840,8 @@ function makeExamRecord(exam: ExamWithUploads) {
     id: exam.id,
     title: exam.title,
     subject: exam.subject ?? "",
+    classGroupId: exam.classGroupId ?? "",
+    classGroupName: classGroup ? [classGroup.name, classGroup.grade].filter(Boolean).join(" / ") : "",
     examDate: exam.examDate ?? "",
     createdAt: exam.createdAt,
     templateType: exam.templateType,
@@ -947,7 +995,7 @@ const eyebrow: CSSProperties = { margin: 0, color: "#2563eb", fontSize: 12, font
 const title: CSSProperties = { margin: "3px 0", fontSize: 28, fontWeight: 950 };
 const desc: CSSProperties = { margin: 0, color: "#6b7280" };
 const newButton: CSSProperties = { background: "#111827", color: "#fff", borderRadius: 8, padding: "10px 14px", textDecoration: "none", fontWeight: 950, whiteSpace: "nowrap" };
-const filterBar: CSSProperties = { display: "grid", gridTemplateColumns: "minmax(220px, 1fr) 150px 150px 150px 100px auto auto", gap: 8, background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, padding: 10 };
+const filterBar: CSSProperties = { display: "grid", gridTemplateColumns: "minmax(220px, 1fr) 150px 150px 150px 150px 100px auto auto", gap: 8, background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, padding: 10 };
 const filterInput: CSSProperties = { border: "1px solid #d1d5db", borderRadius: 7, padding: "8px 9px", minWidth: 0 };
 const filterSelect: CSSProperties = { ...filterInput };
 const card: CSSProperties = { background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, padding: 14 };
@@ -962,6 +1010,8 @@ const subText: CSSProperties = { color: "#6b7280", fontSize: 12, marginTop: 3 };
 const selectedRow: CSSProperties = { background: "#eff6ff" };
 const emptyCell: CSSProperties = { padding: 34, textAlign: "center", color: "#6b7280" };
 const resultButton: CSSProperties = { color: "#1d4ed8", fontWeight: 950, textDecoration: "none" };
+const actionLinks: CSSProperties = { display: "inline-flex", gap: 8, alignItems: "center", whiteSpace: "nowrap" };
+const inlineDeleteForm: CSSProperties = { margin: 0 };
 const smallButton: CSSProperties = { border: "1px solid #d1d5db", borderRadius: 7, background: "#111827", color: "#fff", padding: "8px 10px", fontWeight: 900, cursor: "pointer", textDecoration: "none" };
 const lightButton: CSSProperties = { ...smallButton, background: "#fff", color: "#111827", textAlign: "center" };
 const primaryButton: CSSProperties = { border: 0, borderRadius: 8, background: "#111827", color: "#fff", padding: "10px 12px", fontWeight: 950, cursor: "pointer" };
@@ -977,7 +1027,6 @@ const toneStyles: Record<Tone, CSSProperties> = {
 const detailGrid: CSSProperties = { display: "grid", gap: 12 };
 const miniStats: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(5, minmax(120px, 1fr))", gap: 8 };
 const miniStat: CSSProperties = { border: "1px solid #e5e7eb", borderRadius: 8, padding: 10, display: "flex", flexDirection: "column", gap: 4 };
-const summaryButton: CSSProperties = { cursor: "pointer", fontWeight: 950 };
 const inlineForm: CSSProperties = { display: "inline-flex", gap: 6, alignItems: "center" };
 const miniDetails: CSSProperties = { marginTop: 5, color: "#6b7280" };
 const miniStack: CSSProperties = { display: "grid", gridTemplateColumns: "110px minmax(130px, 1fr) auto", gap: 5, marginTop: 6 };
