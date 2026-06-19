@@ -15,24 +15,24 @@ model Academy {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users             User[]
-  students          Student[]
-  classGroups       ClassGroup[]
-  classMemos        ClassMemo[]
+  users                User[]
+  students             Student[]
+  classGroups          ClassGroup[]
+  classMemos           ClassMemo[]
   classGroupAssistants ClassGroupAssistant[]
-  studentClasses    StudentClass[]
-  counselingRecords CounselingRecord[]
-  clinicRecords     ClinicRecord[]
-  questionRecords   QuestionRecord[]
-  schoolScoreRecords SchoolScoreRecord[]
-  tasks             Task[]
-  omrUploads        OmrUpload[]
-  exams             Exam[]
-  examResults       ExamResult[]
-  attendanceRecords AttendanceRecord[]
-  assignmentRecords AssignmentRecord[]
-  scoreRecords      ScoreRecord[]
-  settings          AcademySetting[]
+  studentClasses       StudentClass[]
+  counselingRecords    CounselingRecord[]
+  clinicRecords        ClinicRecord[]
+  questionRecords      QuestionRecord[]
+  schoolScoreRecords   SchoolScoreRecord[]
+  tasks                Task[]
+  omrUploads           OmrUpload[]
+  exams                Exam[]
+  examResults          ExamResult[]
+  attendanceRecords    AttendanceRecord[]
+  assignmentRecords    AssignmentRecord[]
+  scoreRecords         ScoreRecord[]
+  settings             AcademySetting[]
 }
 
 model AcademySetting {
@@ -62,23 +62,23 @@ model User {
 
   academy Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
 
-  teacherStudents   Student[] @relation("StudentTeacher")
-  assistantStudents Student[] @relation("StudentAssistant")
-  ledClassGroups    ClassGroup[] @relation("ClassGroupTeacher")
-  assistedClassGroups ClassGroup[] @relation("ClassGroupAssistant")
+  teacherStudents          Student[]             @relation("StudentTeacher")
+  assistantStudents        Student[]             @relation("StudentAssistant")
+  ledClassGroups           ClassGroup[]          @relation("ClassGroupTeacher")
+  assistedClassGroups      ClassGroup[]          @relation("ClassGroupAssistant")
   classGroupAssistantLinks ClassGroupAssistant[] @relation("ClassGroupAssistantUser")
 
-  assignedTasks Task[] @relation("TaskAssignee")
-  createdTasks  Task[] @relation("TaskCreator")
-  reviewTasks   Task[] @relation("TaskReviewer")
+  assignedTasks       Task[]              @relation("TaskAssignee")
+  createdTasks        Task[]              @relation("TaskCreator")
+  reviewTasks         Task[]              @relation("TaskReviewer")
   taskStatusHistories TaskStatusHistory[]
   taskSubmissions     TaskSubmission[]
   taskReviews         TaskReview[]
   taskChecklistItems  TaskChecklistItem[]
 
-  memos        StudentMemo[]
-  classMemos   ClassMemo[]
-  taskComments TaskComment[]
+  memos             StudentMemo[]
+  classMemos        ClassMemo[]
+  taskComments      TaskComment[]
   counselingRecords CounselingRecord[] @relation("CounselingOwner")
   clinicRecords     ClinicRecord[]     @relation("ClinicOwner")
   questionRecords   QuestionRecord[]   @relation("QuestionOwner")
@@ -95,8 +95,8 @@ enum UserRole {
 }
 
 model Student {
-  id           String        @id @default(uuid())
-  academyId    String
+  id        String @id @default(uuid())
+  academyId String
 
   name         String
   phone        String?
@@ -108,28 +108,28 @@ model Student {
   status       StudentStatus @default(ACTIVE)
   memo         String?
 
-  teacherId    String?
-  assistantId  String?
+  teacherId   String?
+  assistantId String?
 
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
-  teacher   User?    @relation("StudentTeacher", fields: [teacherId], references: [id], onDelete: SetNull)
-  assistant User?    @relation("StudentAssistant", fields: [assistantId], references: [id], onDelete: SetNull)
+  teacher   User?   @relation("StudentTeacher", fields: [teacherId], references: [id], onDelete: SetNull)
+  assistant User?   @relation("StudentAssistant", fields: [assistantId], references: [id], onDelete: SetNull)
 
-  memos             StudentMemo[]
-  tasks             Task[]
-  studentClasses    StudentClass[]
-  counselingRecords CounselingRecord[]
-  clinicRecords     ClinicRecord[]
-  questionRecords   QuestionRecord[]
+  memos              StudentMemo[]
+  tasks              Task[]
+  studentClasses     StudentClass[]
+  counselingRecords  CounselingRecord[]
+  clinicRecords      ClinicRecord[]
+  questionRecords    QuestionRecord[]
   schoolScoreRecords SchoolScoreRecord[]
-  attendanceRecords AttendanceRecord[]
-  assignmentRecords AssignmentRecord[]
-  scoreRecords      ScoreRecord[]
-  omrUploads        OmrUpload[]
-  examResults       ExamResult[]
+  attendanceRecords  AttendanceRecord[]
+  assignmentRecords  AssignmentRecord[]
+  scoreRecords       ScoreRecord[]
+  omrUploads         OmrUpload[]
+  examResults        ExamResult[]
 
   @@index([academyId])
   @@index([academyId, name])
@@ -144,7 +144,7 @@ enum StudentStatus {
 }
 
 model ClassGroup {
-  id          String   @id @default(uuid())
+  id          String           @id @default(uuid())
   academyId   String
   name        String
   teacherId   String?
@@ -160,17 +160,17 @@ model ClassGroup {
   schedule    String?
   description String?
   status      ClassGroupStatus @default(ACTIVE)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
 
-  academy Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
-  teacher User?   @relation("ClassGroupTeacher", fields: [teacherId], references: [id], onDelete: SetNull)
-  assistant User? @relation("ClassGroupAssistant", fields: [assistantId], references: [id], onDelete: SetNull)
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  teacher   User?   @relation("ClassGroupTeacher", fields: [teacherId], references: [id], onDelete: SetNull)
+  assistant User?   @relation("ClassGroupAssistant", fields: [assistantId], references: [id], onDelete: SetNull)
 
-  studentClasses StudentClass[]
+  studentClasses  StudentClass[]
   classAssistants ClassGroupAssistant[]
-  memos          ClassMemo[]
-  tasks          Task[]
+  memos           ClassMemo[]
+  tasks           Task[]
 
   @@unique([academyId, name])
   @@index([academyId])
@@ -203,16 +203,16 @@ model ClassGroupAssistant {
 }
 
 model StudentClass {
-  id           String   @id @default(uuid())
+  id           String           @id @default(uuid())
   academyId    String
   studentId    String
   classGroupId String
-  isPrimary    Boolean  @default(true)
+  isPrimary    Boolean          @default(true)
   status       EnrollmentStatus @default(ACTIVE)
   joinedAt     String?
   leftAt       String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
 
   academy    Academy    @relation(fields: [academyId], references: [id], onDelete: Cascade)
   student    Student    @relation(fields: [studentId], references: [id], onDelete: Cascade)
@@ -363,13 +363,13 @@ model SchoolScoreRecord {
 }
 
 model AttendanceRecord {
-  id        String           @id @default(uuid())
+  id        String @id @default(uuid())
   academyId String
   studentId String
   date      String
 
-  status    String           @default("PRESENT")
-  memo      String?
+  status String  @default("PRESENT")
+  memo   String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -383,15 +383,15 @@ model AttendanceRecord {
 }
 
 model AssignmentRecord {
-  id        String           @id @default(uuid())
+  id        String @id @default(uuid())
   academyId String
   studentId String
   date      String
-  title     String           @default("과제")
+  title     String @default("과제")
 
-  status    String           @default("UNCHECKED")
-  score     Int?
-  memo      String?
+  status String  @default("UNCHECKED")
+  score  Int?
+  memo   String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -405,15 +405,15 @@ model AssignmentRecord {
 }
 
 model ScoreRecord {
-  id        String   @id @default(uuid())
+  id        String @id @default(uuid())
   academyId String
   studentId String
   date      String
-  title     String   @default("테스트")
+  title     String @default("테스트")
 
-  score     Int?
-  maxScore  Int      @default(100)
-  memo      String?
+  score    Int?
+  maxScore Int     @default(100)
+  memo     String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -427,42 +427,42 @@ model ScoreRecord {
 }
 
 model Task {
-  id          String       @id @default(uuid())
+  id          String   @id @default(uuid())
   academyId   String
   title       String
   description String?
-  type        TaskType     @default(OTHER)
+  type        TaskType @default(OTHER)
 
-  studentId   String?
+  studentId    String?
   classGroupId String?
-  assigneeId  String
-  creatorId   String
-  reviewerId  String?
+  assigneeId   String
+  creatorId    String
+  reviewerId   String?
 
-  status      TaskStatus   @default(TODO)
-  priority    TaskPriority @default(NORMAL)
-  startDate   DateTime?
-  dueDate     DateTime?
-  actualMinutes Int?
+  status          TaskStatus   @default(TODO)
+  priority        TaskPriority @default(NORMAL)
+  startDate       DateTime?
+  dueDate         DateTime?
+  actualMinutes   Int?
   evidenceSummary String?
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
   submittedAt DateTime?
   approvedAt  DateTime?
   rejectedAt  DateTime?
   completedAt DateTime?
 
-  academy    Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
-  student    Student? @relation(fields: [studentId], references: [id], onDelete: SetNull)
-  classGroup ClassGroup? @relation(fields: [classGroupId], references: [id], onDelete: SetNull)
-  assignee   User     @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: Cascade)
-  creator    User     @relation("TaskCreator", fields: [creatorId], references: [id], onDelete: Cascade)
-  reviewer   User?    @relation("TaskReviewer", fields: [reviewerId], references: [id], onDelete: SetNull)
-  comments   TaskComment[]
-  histories  TaskStatusHistory[]
-  submissions TaskSubmission[]
-  reviews    TaskReview[]
+  academy        Academy             @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  student        Student?            @relation(fields: [studentId], references: [id], onDelete: SetNull)
+  classGroup     ClassGroup?         @relation(fields: [classGroupId], references: [id], onDelete: SetNull)
+  assignee       User                @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: Cascade)
+  creator        User                @relation("TaskCreator", fields: [creatorId], references: [id], onDelete: Cascade)
+  reviewer       User?               @relation("TaskReviewer", fields: [reviewerId], references: [id], onDelete: SetNull)
+  comments       TaskComment[]
+  histories      TaskStatusHistory[]
+  submissions    TaskSubmission[]
+  reviews        TaskReview[]
   checklistItems TaskChecklistItem[]
 
   @@index([academyId])
@@ -505,14 +505,14 @@ enum TaskType {
 }
 
 model TaskStatusHistory {
-  id          String   @id @default(uuid())
+  id          String      @id @default(uuid())
   taskId      String
   fromStatus  TaskStatus?
   toStatus    TaskStatus
   changedById String
   memo        String?
-  hasEvidence Boolean  @default(false)
-  createdAt   DateTime @default(now())
+  hasEvidence Boolean     @default(false)
+  createdAt   DateTime    @default(now())
 
   task      Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
   changedBy User @relation(fields: [changedById], references: [id], onDelete: Cascade)
@@ -554,17 +554,17 @@ model TaskReview {
 }
 
 model TaskChecklistItem {
-  id       String   @id @default(uuid())
-  taskId   String
-  title    String
-  isDone   Boolean  @default(false)
-  doneAt   DateTime?
-  doneById String?
-  order    Int      @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id        String    @id @default(uuid())
+  taskId    String
+  title     String
+  isDone    Boolean   @default(false)
+  doneAt    DateTime?
+  doneById  String?
+  order     Int       @default(0)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
-  task   Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  task   Task  @relation(fields: [taskId], references: [id], onDelete: Cascade)
   doneBy User? @relation(fields: [doneById], references: [id], onDelete: SetNull)
 
   @@index([taskId])
@@ -586,27 +586,27 @@ model TaskComment {
 }
 
 model OmrUpload {
-  id           String          @id @default(uuid())
-  academyId    String
-  studentId    String?
-  examId       String?
-  templateType OmrTemplateType @default(OTHER)
-  phoneLast8   String?
-  phoneRecognizeStatus String @default("WAITING")
-  matchStatus  String          @default("NEEDS_PHONE")
-  recognizeStatus String       @default("WAITING")
-  gradingStatus String         @default("WAITING")
-  fileName     String          @default("unknown")
-  fileType     String?
-  fileSize     Int             @default(0)
-  filePath     String?
-  previewImagePath String?
-  recognitionEngine String?
-  recognitionLog String?
-  memo         String?
-  status       String          @default("UPLOADED")
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
+  id                   String          @id @default(uuid())
+  academyId            String
+  studentId            String?
+  examId               String?
+  templateType         OmrTemplateType @default(OTHER)
+  phoneLast8           String?
+  phoneRecognizeStatus String          @default("WAITING")
+  matchStatus          String          @default("NEEDS_PHONE")
+  recognizeStatus      String          @default("WAITING")
+  gradingStatus        String          @default("WAITING")
+  fileName             String          @default("unknown")
+  fileType             String?
+  fileSize             Int             @default(0)
+  filePath             String?
+  previewImagePath     String?
+  recognitionEngine    String?
+  recognitionLog       String?
+  memo                 String?
+  status               String          @default("UPLOADED")
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
 
   academy           Academy               @relation(fields: [academyId], references: [id], onDelete: Cascade)
   student           Student?              @relation(fields: [studentId], references: [id], onDelete: SetNull)
@@ -686,10 +686,10 @@ model ExamResult {
   reviewNeededCount Int      @default(0)
   createdAt         DateTime @default(now())
 
-  academy   Academy    @relation(fields: [academyId], references: [id], onDelete: Cascade)
-  student   Student    @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  exam      Exam       @relation(fields: [examId], references: [id], onDelete: Cascade)
-  omrUpload OmrUpload? @relation(fields: [omrUploadId], references: [id], onDelete: SetNull)
+  academy   Academy          @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  student   Student          @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  exam      Exam             @relation(fields: [examId], references: [id], onDelete: Cascade)
+  omrUpload OmrUpload?       @relation(fields: [omrUploadId], references: [id], onDelete: SetNull)
   items     ExamResultItem[]
 
   @@index([academyId])
