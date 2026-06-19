@@ -10,20 +10,11 @@ function text(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
 }
 
-function redirectTo(request: Request, path: string) {
-  const url = new URL(path, request.url);
-  const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
-  const proto = request.headers.get("x-forwarded-proto");
-
-  if (host) {
-    url.host = host.split(",")[0].trim();
-  }
-
-  if (proto) {
-    url.protocol = `${proto.split(",")[0].trim()}:`;
-  }
-
-  return NextResponse.redirect(url, 303);
+function redirectTo(path: string) {
+  return new NextResponse(null, {
+    status: 303,
+    headers: { Location: path },
+  });
 }
 
 export async function POST(request: Request) {
@@ -33,24 +24,24 @@ export async function POST(request: Request) {
   const password = text(formData, "password");
 
   if (!academyCode || !loginId || !password) {
-    return redirectTo(request, "/login?error=empty");
+    return redirectTo("/login?error=empty");
   }
 
   const academy = await prisma.academy.findUnique({
     where: { code: academyCode },
   });
   if (!academy) {
-    return redirectTo(request, "/login?error=invalid");
+    return redirectTo("/login?error=invalid");
   }
 
   const user = await prisma.user.findUnique({
     where: { academyId_loginId: { academyId: academy.id, loginId } },
   });
   if (!user || !user.isActive || !verifyPassword(password, user.passwordHash)) {
-    return redirectTo(request, "/login?error=invalid");
+    return redirectTo("/login?error=invalid");
   }
 
-  const response = redirectTo(request, "/dashboard");
+  const response = redirectTo("/dashboard");
   response.cookies.set(SESSION_COOKIE, user.id, SESSION_COOKIE_OPTIONS);
   return response;
 }

@@ -64,6 +64,12 @@ function scoreValue(value?: string) {
   return Number.isFinite(score) && score >= 0 ? Math.round(score) : 1;
 }
 
+function intValue(value: string | undefined, fallback: number, min: number, max: number) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(min, Math.min(max, Math.round(parsed)));
+}
+
 function normalizeAnswer(value?: string) {
   if (!value) return null;
   const compact = value.replace(/\s+/g, "").toUpperCase();
@@ -189,9 +195,31 @@ export async function createExamAction(formData: FormData) {
 
   const templateType = enumValue(optionalText(formData, "templateType"), TEMPLATE_TYPES, OmrTemplateType.OTHER);
   const template = getOmrTemplate(templateType);
-  const title = text(formData, "title");
-  const subject = optionalText(formData, "subject") ?? template.subject;
+  const titleInput = text(formData, "title");
+  const examName = optionalText(formData, "examName");
+  const classGroupId = cleanId(text(formData, "classGroupId"));
+  const classGroup = classGroupId
+    ? await prisma.classGroup.findFirst({
+        where: { id: classGroupId, academyId: user.academyId },
+        select: { id: true, name: true },
+      })
+    : null;
+  const title = [titleInput, examName].filter(Boolean).join(" / ");
+  const subject = [optionalText(formData, "subject") ?? template.subject, classGroup?.name].filter(Boolean).join(" / ");
   const examDate = optionalText(formData, "examDate");
+  const questionCount = intValue(text(formData, "questionCount"), template.questionCount, 1, template.questionCount);
+  const answerKeys = template.questions
+    .slice(0, questionCount)
+    .map((question) => {
+      const answer = normalizeAnswer(text(formData, `correct-${question.no}`));
+      if (!answer) return null;
+      return {
+        questionNo: question.no,
+        answer,
+        score: scoreValue(text(formData, `score-${question.no}`)),
+      };
+    })
+    .filter((answerKey): answerKey is { questionNo: number; answer: string; score: number } => Boolean(answerKey));
 
   if (!title) return;
 
@@ -202,7 +230,10 @@ export async function createExamAction(formData: FormData) {
       subject,
       examDate,
       templateType,
-      questionCount: template.questionCount,
+      questionCount,
+      answerKeys: {
+        create: answerKeys,
+      },
     },
   });
 
@@ -212,7 +243,7 @@ export async function createExamAction(formData: FormData) {
     entityType: "Exam",
     entityId: exam.id,
     summary: `시험 생성: ${title}`,
-    metadata: { templateType, subject, examDate },
+    metadata: { templateType, subject, examDate, examName, classGroupId: classGroup?.id ?? null, questionCount, answerKeyCount: answerKeys.length },
   });
 
   revalidatePath("/omr");
@@ -230,9 +261,10 @@ export async function saveAnswerKeyAction(formData: FormData) {
   if (!exam) return;
 
   const template = getOmrTemplate(exam.templateType);
+  const questions = template.questions.slice(0, exam.questionCount);
 
   await prisma.$transaction(
-    template.questions.map((question) => {
+    questions.map((question) => {
       const answer = normalizeAnswer(text(formData, `correct-${question.no}`));
       const score = scoreValue(text(formData, `score-${question.no}`));
 
@@ -273,7 +305,10 @@ export async function uploadOmrAction(formData: FormData) {
 
   if (!examId || files.length === 0) return;
 
-  const exam = await prisma.exam.findFirst({ where: { id: examId, academyId: user.academyId } });
+  const exam = await prisma.exam.findFirst({
+    where: { id: examId, academyId: user.academyId },
+    include: { answerKeys: true },
+  });
 
   if (!exam) return;
 
@@ -285,10 +320,10 @@ export async function uploadOmrAction(formData: FormData) {
   const uploadDir = path.join(process.cwd(), "public", "uploads", "omr");
   await mkdir(uploadDir, { recursive: true });
 
-  let firstUploadId: string | null = null;
+  const createdUploadIds: string[] = [];
   let skippedLargeFiles = 0;
 
-  for (const [index, file] of files.entries()) {
+  for (const file of files) {
     if (file.size > OMR_MAX_FILE_BYTES) {
       skippedLargeFiles += 1;
       continue;
@@ -299,15 +334,10 @@ export async function uploadOmrAction(formData: FormData) {
     const bytes = Buffer.from(await file.arrayBuffer());
     await writeFile(diskPath, bytes);
 
-    const last8 = phoneLast8(text(formData, `phoneLast8-${index}`) || text(formData, `phone-${index}`));
-    const manualStudentId = cleanId(text(formData, `studentId-${index}`) || text(formData, "studentId"));
-    const match = await matchStudentByPhoneLast8(user.academyId, last8, manualStudentId);
-    const uploadStatus = match.studentId ? "UPLOADED" : match.matchStatus;
-
     const upload = await prisma.omrUpload.create({
       data: {
         academyId: user.academyId,
-        studentId: match.studentId,
+        studentId: null,
         examId: exam.id,
         templateType: exam.templateType,
         fileName: file.name || storedFileName,
@@ -315,41 +345,68 @@ export async function uploadOmrAction(formData: FormData) {
         fileSize: file.size,
         filePath: `/uploads/omr/${storedFileName}`,
         memo,
-        status: uploadStatus,
+        status: "UPLOADED",
       },
     });
 
     await prisma.$executeRaw`
       UPDATE "OmrUpload"
-      SET "phoneLast8" = ${last8},
-          "phoneRecognizeStatus" = ${last8 ? PHONE_RECOGNIZE_STATUSES.MANUAL : PHONE_RECOGNIZE_STATUSES.WAITING},
-          "matchStatus" = ${match.matchStatus},
+      SET "phoneLast8" = ${null},
+          "phoneRecognizeStatus" = ${PHONE_RECOGNIZE_STATUSES.WAITING},
+          "matchStatus" = ${OMR_UPLOAD_STATUSES.NEEDS_PHONE},
           "recognizeStatus" = ${OMR_UPLOAD_STATUSES.WAITING},
           "gradingStatus" = ${OMR_UPLOAD_STATUSES.WAITING}
       WHERE "id" = ${upload.id}
     `;
 
-    firstUploadId ??= upload.id;
+    createdUploadIds.push(upload.id);
   }
 
-  if (!firstUploadId && skippedLargeFiles > 0) {
+  if (createdUploadIds.length === 0 && skippedLargeFiles > 0) {
     redirect(omrHref(exam.id, { uploadError: "file-too-large", skipped: skippedLargeFiles }));
+  }
+
+  let recognizedCount = 0;
+  let gradedCount = 0;
+  let failedCount = 0;
+
+  for (const uploadId of createdUploadIds) {
+    try {
+      await recognizeOmrUploadInternal(uploadId, user.academyId);
+      recognizedCount += 1;
+
+      if (exam.answerKeys.length > 0) {
+        const graded = await gradeOmrUploadInternal(uploadId, user.academyId);
+        if (graded) gradedCount += 1;
+      }
+    } catch (error) {
+      failedCount += 1;
+      console.error(`OMR upload auto-processing failed for upload ${uploadId}`, error);
+      await prisma.omrUpload.update({ where: { id: uploadId }, data: { status: "MANUAL_REVIEW_READY" } });
+      await prisma.$executeRaw`
+        UPDATE "OmrUpload"
+        SET "recognizeStatus" = ${OMR_UPLOAD_STATUSES.FAILED},
+            "gradingStatus" = ${OMR_UPLOAD_STATUSES.REVIEW_NEEDED}
+        WHERE "id" = ${uploadId}
+      `;
+    }
   }
 
   await recordActivity({
     actor: user,
     action: "CREATE",
     entityType: "OmrUpload",
-    entityId: firstUploadId,
+    entityId: createdUploadIds[0] ?? null,
     summary: `OMR 업로드: ${files.length}개`,
-    metadata: { examId: exam.id, fileCount: files.length },
+    metadata: { examId: exam.id, fileCount: files.length, recognizedCount, gradedCount, failedCount },
   });
 
   revalidatePath("/omr");
   redirect(
-    firstUploadId
-      ? omrHref(exam.id, { uploadId: firstUploadId, uploadWarning: skippedLargeFiles > 0 ? "file-too-large" : null, skipped: skippedLargeFiles || null })
-      : omrHref(exam.id)
+    omrHref(exam.id, {
+      uploadWarning: skippedLargeFiles > 0 ? "file-too-large" : null,
+      skipped: skippedLargeFiles || null,
+    })
   );
 }
 
@@ -580,16 +637,21 @@ export async function recognizeOmrAction(formData: FormData) {
   if (!uploadId) return;
 
   const result = await recognizeOmrUploadInternal(uploadId, user.academyId);
+  const graded = await gradeOmrUploadInternal(uploadId, user.academyId);
 
   await recordActivity({
     actor: user,
     action: "RECOGNIZE",
     entityType: "OmrUpload",
     entityId: uploadId,
-    summary: `OMR 인식 실행`,
+    summary: graded ? "OMR recognition and auto-grading" : "OMR recognition",
   });
 
   revalidatePath("/omr");
+  if (graded) {
+    revalidatePath("/students");
+    revalidatePath(`/students/${graded.studentId}`);
+  }
   redirect(result.examId ? `/omr?examId=${result.examId}&uploadId=${result.uploadId}` : "/omr");
 }
 
@@ -614,9 +676,13 @@ export async function recognizeSelectedOmrUploadsAction(formData: FormData) {
     orderBy: { createdAt: "asc" },
   });
 
+  let gradedCount = 0;
+
   for (const upload of uploads) {
     try {
       await recognizeOmrUploadInternal(upload.id, user.academyId);
+      const graded = await gradeOmrUploadInternal(upload.id, user.academyId);
+      if (graded) gradedCount += 1;
     } catch (error) {
       console.error(`OMR recognition failed for upload ${upload.id}`, error);
       await prisma.omrUpload.update({ where: { id: upload.id }, data: { status: "MANUAL_REVIEW_READY" } });
@@ -633,10 +699,11 @@ export async function recognizeSelectedOmrUploadsAction(formData: FormData) {
     action: "RECOGNIZE",
     entityType: "OmrUpload",
     summary: `OMR 일괄 인식 실행: ${uploads.length}개`,
-    metadata: { examId: examId || null, uploadIds: uploads.map((upload) => upload.id) },
+    metadata: { examId: examId || null, uploadIds: uploads.map((upload) => upload.id), gradedCount },
   });
 
   revalidatePath("/omr");
+  if (gradedCount > 0) revalidatePath("/students");
   redirect(examId ? `/omr?examId=${examId}` : "/omr");
 }
 
@@ -743,9 +810,10 @@ async function gradeOmrUploadInternal(uploadId: string, academyId: string, formD
   const template = getOmrTemplate(upload.templateType);
   if (!formData && exam.answerKeys.length === 0) return null;
 
+  const questions = template.questions.slice(0, exam.questionCount);
   const answerKeyByNo = new Map(exam.answerKeys.map((key) => [key.questionNo, key]));
   const recognizedByNo = new Map(upload.recognizedAnswers.map((answer) => [answer.questionNo, answer]));
-  const resultItems = template.questions.map((question) => {
+  const resultItems = questions.map((question) => {
     const recognized = recognizedByNo.get(question.no);
     const dbAnswer = recognized?.finalAnswer ?? recognized?.correctedAnswer ?? recognized?.recognizedAnswer ?? undefined;
     const studentAnswer = formData ? normalizeAnswer(text(formData, `student-${question.no}`)) : normalizeAnswer(dbAnswer);
@@ -865,8 +933,8 @@ async function gradeOmrUploadInternal(uploadId: string, academyId: string, formD
       },
       update: {
         score: totalScore,
-        maxScore: maxScore || template.questionCount,
-        memo: `OMR grading ${correctCount}/${template.questionCount}, review ${reviewNeededCount}`,
+        maxScore: maxScore || exam.questionCount,
+        memo: `OMR grading ${correctCount}/${exam.questionCount}, review ${reviewNeededCount}`,
       },
       create: {
         academyId,
@@ -874,8 +942,8 @@ async function gradeOmrUploadInternal(uploadId: string, academyId: string, formD
         date: scoreDate,
         title: scoreTitle,
         score: totalScore,
-        maxScore: maxScore || template.questionCount,
-        memo: `OMR grading ${correctCount}/${template.questionCount}, review ${reviewNeededCount}`,
+        maxScore: maxScore || exam.questionCount,
+        memo: `OMR grading ${correctCount}/${exam.questionCount}, review ${reviewNeededCount}`,
       },
     });
 

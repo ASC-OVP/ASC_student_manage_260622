@@ -25,16 +25,20 @@ export default function OmrMultiUploadForm({ exams, selectedExamId }: Props) {
 
   return (
     <form action={uploadOmrAction} style={stack}>
-      <select name="examId" defaultValue={selectedExamId ?? ""} required style={input}>
-        <option value="" disabled>
-          검사 선택
-        </option>
-        {exams.map((exam) => (
-          <option key={exam.id} value={exam.id}>
-            {exam.title}
+      {selectedExamId ? (
+        <input type="hidden" name="examId" value={selectedExamId} />
+      ) : (
+        <select name="examId" defaultValue="" required style={input}>
+          <option value="" disabled>
+            검사 선택
           </option>
-        ))}
-      </select>
+          {exams.map((exam) => (
+            <option key={exam.id} value={exam.id}>
+              {exam.title}
+            </option>
+          ))}
+        </select>
+      )}
 
       <input
         name="files"
@@ -60,11 +64,10 @@ export default function OmrMultiUploadForm({ exams, selectedExamId }: Props) {
             <span style={isBatchTooLarge ? dangerText : undefined}>{formatOmrBytes(totalSize)}</span>
           </div>
           {files.map((file, index) => (
-            <label key={`${file.name}-${index}`} style={fileRow}>
+            <div key={`${file.name}-${index}`} style={fileRow}>
               <span style={fileName}>{file.name}</span>
-              <input name={`phoneLast8-${index}`} placeholder="전화번호 뒤 8자리" style={phoneInput} inputMode="numeric" />
               <small style={file.size > OMR_MAX_FILE_BYTES ? dangerText : undefined}>{formatOmrBytes(file.size)}</small>
-            </label>
+            </div>
           ))}
           {hasOversizedFile && <p style={dangerText}>80MB를 넘는 파일이 있습니다. PDF를 흑백/저해상도로 다시 스캔하거나 파일을 나눠서 올려주세요.</p>}
           {isBatchTooLarge && <p style={dangerText}>선택한 파일 총 용량이 너무 큽니다. 여러 번 나눠서 업로드해주세요.</p>}
@@ -81,7 +84,7 @@ function SubmitButton({ disabled }: { disabled: boolean }) {
   const { pending } = useFormStatus();
   return (
     <button type="submit" disabled={disabled || pending} style={{ ...primaryButton, opacity: disabled || pending ? 0.55 : 1 }}>
-      {pending ? "업로드 중..." : "선택 파일 업로드"}
+      {pending ? "업로드 중..." : "파일 업로드"}
     </button>
   );
 }
@@ -91,8 +94,7 @@ const input: CSSProperties = { width: "100%", boxSizing: "border-box", border: "
 const primaryButton: CSSProperties = { border: 0, borderRadius: 7, background: "#111827", color: "#fff", padding: "9px 11px", fontWeight: 900, fontSize: 13, cursor: "pointer" };
 const fileList: CSSProperties = { display: "grid", gap: 6, border: "1px solid #e5e7eb", borderRadius: 8, padding: 8, background: "#f8fafc" };
 const fileListHead: CSSProperties = { display: "flex", justifyContent: "space-between", color: "#374151", fontSize: 12 };
-const fileRow: CSSProperties = { display: "grid", gridTemplateColumns: "minmax(0, 1fr) 150px 64px", gap: 6, alignItems: "center", fontSize: 12 };
+const fileRow: CSSProperties = { display: "grid", gridTemplateColumns: "minmax(0, 1fr) 72px", gap: 6, alignItems: "center", fontSize: 12 };
 const fileName: CSSProperties = { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "#111827", fontWeight: 800 };
-const phoneInput: CSSProperties = { border: "1px solid #d1d5db", borderRadius: 6, padding: "6px 7px", fontSize: 12, minWidth: 0 };
 const hintText: CSSProperties = { margin: 0, color: "#6b7280", fontSize: 12, lineHeight: 1.45 };
 const dangerText: CSSProperties = { margin: 0, color: "#dc2626", fontSize: 12, fontWeight: 800 };

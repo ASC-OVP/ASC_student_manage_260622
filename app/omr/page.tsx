@@ -14,7 +14,6 @@ import {
   deleteOmrUploadAction,
   gradeOmrAction,
   gradeSelectedOmrUploadsAction,
-  recognizeOmrAction,
   recognizeSelectedOmrUploadsAction,
   saveAnswerKeyAction,
   updateOmrUploadMatchAction,
@@ -100,7 +99,7 @@ type ExamWithUploads = {
 };
 type SelectedUpload = Omit<ExamUploadLite, "student" | "recognizedAnswers" | "results"> & {
   student: StudentOption | null;
-  exam: ({ answerKeys: AnswerKeyLite[] } & { id: string; title: string; templateType: OmrTemplateType }) | null;
+  exam: ({ answerKeys: AnswerKeyLite[] } & { id: string; title: string; templateType: OmrTemplateType; questionCount: number }) | null;
   recognizedAnswers: RecognizedAnswerLite[];
   results: ResultWithItems[];
 };
@@ -287,36 +286,37 @@ export default async function OmrPage({ searchParams }: Props) {
       </section>
 
       {showNewSheet && (
-        <RightSheet title="새 OMR 검사" closeHref="/omr">
+        <RightSheet title="새 OMR 검사" closeHref="/omr" wide>
           <section style={sheetSection}>
-            <h3 style={sheetTitle}>1. 검사 만들기</h3>
+            <h3 style={sheetTitle}>검사 만들기</h3>
             <form action={createExamAction} style={stack}>
-              <input name="title" placeholder="예: 2026-06-17 수학 OMR" required style={input} />
               <div style={twoCols}>
+                <input name="title" placeholder="검사명" required style={input} />
+                <input name="examName" placeholder="시험명" style={input} />
+              </div>
+              <div style={twoCols}>
+                <input name="subject" placeholder="과목" style={input} />
+                <select name="classGroupId" defaultValue="" style={input}>
+                  <option value="">반 선택</option>
+                  {classGroups.map((classGroup) => (
+                    <option key={classGroup.id} value={classGroup.id}>
+                      {classGroup.name}{classGroup.grade ? ` / ${classGroup.grade}` : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div style={twoCols}>
+                <input name="examDate" type="date" defaultValue={todayKoreaDate()} style={input} />
                 <select name="templateType" defaultValue={OmrTemplateType.OTHER} style={input}>
                   {omrTemplateList.map((template) => (
                     <option key={template.type} value={template.type}>{template.label}</option>
                   ))}
                 </select>
-                <input name="subject" placeholder="과목" style={input} />
               </div>
-              <select name="classGroupId" defaultValue="" style={input}>
-                <option value="">반 선택</option>
-                {classGroups.map((classGroup) => (
-                  <option key={classGroup.id} value={classGroup.id}>
-                    {classGroup.name}{classGroup.grade ? ` / ${classGroup.grade}` : ""}
-                  </option>
-                ))}
-              </select>
-              <input name="examDate" type="date" defaultValue={todayKoreaDate()} style={input} />
+              <input name="questionCount" type="number" min={1} max={45} placeholder="문항 수" style={input} />
+              <CreateAnswerKeyGrid />
               <button style={primaryButton} disabled={!canManageExam}>검사 만들기</button>
             </form>
-          </section>
-
-          <section style={sheetSection}>
-            <h3 style={sheetTitle}>2. 파일 업로드</h3>
-            <p style={muted}>검사를 선택한 뒤 PDF 또는 이미지 파일을 여러 개 업로드하고, 파일별 전화번호 뒤 8자리를 입력합니다.</p>
-            <OmrMultiUploadForm exams={exams.map((exam) => ({ id: exam.id, title: exam.title }))} selectedExamId={selectedExam?.id} />
           </section>
         </RightSheet>
       )}
@@ -392,10 +392,20 @@ function ExamDetail({
           <summary style={summaryButton}>정답 입력</summary>
           <form action={saveAnswerKeyAction} style={stack}>
             <input type="hidden" name="examId" value={exam.id} />
-            <AnswerKeyGrid questions={template.questions} keyByNo={keyByNo} />
+            <AnswerKeyGrid questions={template.questions.slice(0, exam.questionCount)} keyByNo={keyByNo} />
             <button style={secondaryButton} disabled={!canManageExam}>정답 저장</button>
           </form>
         </details>
+      </section>
+
+      <section style={card}>
+        <div style={sectionHead}>
+          <div>
+            <h2 style={sectionTitle}>파일 업로드</h2>
+            <p style={muted}>PDF/이미지를 여러 개 올리면 전화번호 인식, 학생 매칭, 답안 인식, 자동 채점을 순서대로 시도합니다.</p>
+          </div>
+        </div>
+        <OmrMultiUploadForm exams={[{ id: exam.id, title: exam.title }]} selectedExamId={exam.id} />
       </section>
 
       <section style={card}>
@@ -405,9 +415,7 @@ function ExamDetail({
         <div style={sectionHead}>
           <h2 style={sectionTitle}>학생별 결과 요약</h2>
           <div style={inlineForm}>
-            <button type="submit" form={bulkFormId} name="intent" value="recognize:selected" style={secondaryButton} disabled={exam.uploads.length === 0}>선택 인식</button>
             <button type="submit" form={bulkFormId} name="intent" value="recognize:all" style={smallButton} disabled={exam.uploads.length === 0}>전체 인식</button>
-            <button type="submit" form={bulkFormId} name="intent" value="grade:selected" style={secondaryButton} disabled={exam.uploads.length === 0}>선택 채점/등록</button>
             <button type="submit" form={bulkFormId} name="intent" value="grade:all" style={secondaryButton} disabled={exam.uploads.length === 0}>전체 채점/등록</button>
           </div>
         </div>
@@ -415,17 +423,19 @@ function ExamDetail({
           <table style={table}>
             <thead>
               <tr>
-                <Th>선택</Th>
-                <Th>파일</Th>
-                <Th>매칭된 학생</Th>
+                <Th>파일명</Th>
                 <Th>인식 전화번호</Th>
-                <Th>인식</Th>
-                <Th>검수</Th>
+                <Th>매칭된 학생</Th>
+                <Th>매칭 상태</Th>
+                <Th>답안 인식 상태</Th>
                 <Th>점수</Th>
-                <Th>정답 / 오답 / 미응답</Th>
-                <Th>학생 성적</Th>
-                <Th>열기</Th>
-                <Th>삭제</Th>
+                <Th>정답 수</Th>
+                <Th>오답 수</Th>
+                <Th>미응답 수</Th>
+                <Th>검수 필요 수</Th>
+                <Th>성적 등록 상태</Th>
+                <Th>답안 확인</Th>
+                <Th>관리</Th>
               </tr>
             </thead>
             <tbody>
@@ -434,30 +444,30 @@ function ExamDetail({
                 const reviewNeeded = (upload.recognizedAnswers as Array<{ status: OmrAnswerStatus }>).some(
                   (answer) => answer.status === OmrAnswerStatus.REVIEW_NEEDED || answer.status === OmrAnswerStatus.MULTIPLE
                 );
+                const reviewNeededCount = result?.reviewNeededCount ?? (reviewNeeded ? 1 : 0);
                 return (
                   <tr key={upload.id}>
-                    <Td><input type="checkbox" name="uploadIds" value={upload.id} form={bulkFormId} aria-label={`${upload.fileName} 선택`} /></Td>
                     <Td>
                       <b>{upload.fileName}</b>
                       <div style={subText}>{formatBytes(upload.fileSize)} / {formatDate(upload.createdAt)}</div>
                     </Td>
                     <Td>
-                      {upload.student?.name ?? <span style={dangerText}>학생 없음</span>}
-                      <div style={subText}>
-                        <StatusBadge tone={matchTone(upload.matchStatus)}>{matchStatusText(upload.matchStatus)}</StatusBadge>
-                      </div>
-                      <MatchMiniForm upload={upload} students={students} />
-                    </Td>
-                    <Td>
                       {formatPhoneLast8(upload.phoneLast8)}
                       <div style={subText}>{phoneRecognizeStatusText(upload.phoneRecognizeStatus)}</div>
                     </Td>
+                    <Td>
+                      {upload.student ? studentLabel(upload.student) : <span style={dangerText}>매칭 필요</span>}
+                      <MatchMiniForm upload={upload} students={students} />
+                    </Td>
+                    <Td><StatusBadge tone={matchTone(upload.matchStatus)}>{matchStatusText(upload.matchStatus)}</StatusBadge></Td>
                     <Td><StatusBadge tone={recognizeTone(upload.recognizeStatus)}>{recognizeStatusText(upload.recognizeStatus)}</StatusBadge></Td>
-                    <Td><StatusBadge tone={reviewNeeded ? "yellow" : "green"}>{reviewNeeded ? "검수 필요" : "정상"}</StatusBadge></Td>
-                    <Td>{result ? `${result.totalScore}/${result.maxScore || template.questionCount}` : "-"}</Td>
-                    <Td>{result ? `${result.correctCount}/${result.wrongCount}/${result.blankCount}` : "-"}</Td>
-                    <Td><StatusBadge tone={result ? "green" : "gray"}>{result ? "등록됨" : "미등록"}</StatusBadge></Td>
-                    <Td><Link href={`/omr?examId=${exam.id}&uploadId=${upload.id}`} style={resultButton}>검수</Link></Td>
+                    <Td>{result ? `${result.totalScore}/${result.maxScore || exam.questionCount}` : "-"}</Td>
+                    <Td>{result?.correctCount ?? "-"}</Td>
+                    <Td>{result?.wrongCount ?? "-"}</Td>
+                    <Td>{result?.blankCount ?? "-"}</Td>
+                    <Td>{reviewNeededCount}</Td>
+                    <Td><StatusBadge tone={result ? "green" : upload.studentId && upload.recognizeStatus === "RECOGNIZED" ? "yellow" : "gray"}>{result ? "등록 완료" : upload.studentId && upload.recognizeStatus === "RECOGNIZED" ? "등록 가능" : "대기"}</StatusBadge></Td>
+                    <Td><Link href={`/omr?examId=${exam.id}&uploadId=${upload.id}`} style={resultButton}>답안 확인</Link></Td>
                     <Td>
                       <form action={deleteOmrUploadAction}>
                         <input type="hidden" name="uploadId" value={upload.id} />
@@ -470,7 +480,7 @@ function ExamDetail({
               })}
               {exam.uploads.length === 0 && (
                 <tr>
-                  <td colSpan={11} style={emptyCell}>아직 업로드된 파일이 없습니다.</td>
+                  <td colSpan={13} style={emptyCell}>아직 업로드된 파일이 없습니다.</td>
                 </tr>
               )}
             </tbody>
@@ -542,12 +552,6 @@ function UploadReview({
           </select>
           <button style={secondaryButton}>설정 저장</button>
         </form>
-        <div style={divider} />
-        <form action={recognizeOmrAction} style={inlineForm}>
-          <input type="hidden" name="uploadId" value={upload.id} />
-          <button style={primaryButton} disabled={!upload.student}>인식 다시 실행</button>
-        </form>
-        {!upload.student && <p style={dangerText}>인식 전에 학생을 먼저 매칭해야 합니다.</p>}
       </section>
 
       <section style={{ ...card, gridColumn: "1 / -1" }}>
@@ -556,7 +560,7 @@ function UploadReview({
             <h3 style={sectionTitle}>답안 검수 및 채점</h3>
             <p style={muted}>인식에 실패해도 답안을 직접 입력해서 채점하고 저장할 수 있습니다.</p>
           </div>
-          {latestResult && <StatusBadge tone="green">{latestResult.totalScore}/{latestResult.maxScore || template.questionCount}</StatusBadge>}
+          {latestResult && <StatusBadge tone="green">{latestResult.totalScore}/{latestResult.maxScore || upload.exam?.questionCount || template.questionCount}</StatusBadge>}
         </div>
         <form action={gradeOmrAction} style={stack}>
           <input type="hidden" name="uploadId" value={upload.id} />
@@ -567,16 +571,17 @@ function UploadReview({
                   <Th>번호</Th>
                   <Th>영역</Th>
                   <Th>자동 인식</Th>
-                  <Th>최종 답안</Th>
+                  <Th>수정 답</Th>
+                  <Th>최종 답</Th>
                   <Th>정답</Th>
-                  <Th>결과</Th>
-                  <Th>상태</Th>
                   <Th>신뢰도</Th>
+                  <Th>상태</Th>
+                  <Th>정오 여부</Th>
                   <Th>배점</Th>
                 </tr>
               </thead>
               <tbody>
-                {template.questions.map((question) => (
+                {template.questions.slice(0, upload.exam?.questionCount ?? template.questionCount).map((question) => (
                   <QuestionRow
                     key={question.no}
                     question={question}
@@ -615,6 +620,16 @@ function MatchMiniForm({ upload, students }: { upload: Pick<ExamUploadLite, "id"
   );
 }
 
+function CreateAnswerKeyGrid() {
+  const questions: OmrTemplateQuestion[] = Array.from({ length: 45 }, (_, index) => ({
+    no: index + 1,
+    section: "정답",
+    kind: "CHOICE",
+  }));
+
+  return <AnswerKeyGrid questions={questions} keyByNo={new Map()} />;
+}
+
 function AnswerKeyGrid({ questions, keyByNo }: { questions: OmrTemplateQuestion[]; keyByNo: Map<number, { answer: string; score: number }> }) {
   return (
     <div style={answerGrid}>
@@ -644,6 +659,7 @@ function QuestionRow({
   resultItem?: { status: ExamResultStatus; studentAnswer: string | null; correctAnswer: string | null; score: number };
 }) {
   const studentAnswer = resultItem?.studentAnswer ?? recognized?.finalAnswer ?? recognized?.correctedAnswer ?? recognized?.recognizedAnswer ?? "";
+  const finalAnswer = recognized?.finalAnswer ?? recognized?.correctedAnswer ?? recognized?.recognizedAnswer ?? "";
   const correctAnswer = resultItem?.correctAnswer ?? answerKey?.answer ?? "";
   const status = recognized?.status ?? (studentAnswer ? OmrAnswerStatus.MANUAL : OmrAnswerStatus.BLANK);
 
@@ -653,8 +669,9 @@ function QuestionRow({
       <Td>{question.section}</Td>
       <Td>{recognized?.recognizedAnswer || "-"}</Td>
       <Td><AnswerInput name={`student-${question.no}`} question={question} defaultValue={studentAnswer} /></Td>
+      <Td>{finalAnswer || "-"}</Td>
       <Td><AnswerInput name={`correct-${question.no}`} question={question} defaultValue={correctAnswer} /></Td>
-      <Td>{resultItem ? resultStatusText(resultItem.status) : "-"}</Td>
+      <Td>{formatConfidence(recognized?.confidence)}</Td>
       <Td>
         <select name={`status-${question.no}`} defaultValue={status} style={miniInput}>
           {answerStatusOptions.map(([value, label]) => (
@@ -662,7 +679,7 @@ function QuestionRow({
           ))}
         </select>
       </Td>
-      <Td>{formatConfidence(recognized?.confidence)}</Td>
+      <Td>{resultItem ? resultStatusText(resultItem.status) : "-"}</Td>
       <Td><input name={`score-${question.no}`} type="number" min={0} defaultValue={answerKey?.score ?? 1} style={scoreInput} /></Td>
     </tr>
   );
@@ -917,7 +934,7 @@ function formatConfidence(value: number | null | undefined) {
   return `${Math.round(value * 100)}%`;
 }
 
-function studentLabel(student: StudentOption) {
+function studentLabel(student: StudentOption | StudentBrief) {
   return [student.name, student.schoolName, student.grade].filter(Boolean).join(" / ");
 }
 
