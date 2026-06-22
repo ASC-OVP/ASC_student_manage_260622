@@ -12,6 +12,7 @@ import {
   toggleRecurringTaskAction,
   updateRecurringTaskAction,
   updateTaskChecklistItemAction,
+  updateTaskColorAction,
   updateTaskStatus,
 } from "./actions";
 
@@ -21,6 +22,11 @@ type TaskRow = Task & {
   student: Pick<Student, "id" | "name"> | null;
   classGroup: Pick<ClassGroup, "id" | "name" | "teacherId"> | null;
   recurringTask: Pick<RecurringTask, "id" | "title"> | null;
+  assignees: Array<{
+    assigneeId: string;
+    color: string | null;
+    assignee: Pick<User, "id" | "name" | "role">;
+  }>;
   checklistItems: TaskChecklistItem[];
   comments: Array<TaskComment & { writer: Pick<User, "name"> }>;
   submissions: Array<TaskSubmission & { submittedBy: Pick<User, "name"> }>;
@@ -68,6 +74,10 @@ export default async function SimpleTasksPage({ searchParams }: Props = {}) {
         student: { select: { id: true, name: true } },
         classGroup: { select: { id: true, name: true, teacherId: true } },
         recurringTask: { select: { id: true, title: true } },
+        assignees: {
+          orderBy: { createdAt: "asc" },
+          include: { assignee: { select: { id: true, name: true, role: true } } },
+        },
         checklistItems: { orderBy: { order: "asc" } },
         comments: {
           orderBy: { createdAt: "desc" },
@@ -219,14 +229,19 @@ export default async function SimpleTasksPage({ searchParams }: Props = {}) {
             </Panel>
           </>
         ) : (
-          <Panel title={taskPanelTitle(activeTab, isAssistant)} right={<span style={softText}>{visibleTasks.length}개</span>}>
-            <div style={taskList}>
-              {visibleTasks.map((task) => (
-                <TaskCard key={task.id} task={task} currentUserId={user.id} isAssistant={isAssistant} />
-              ))}
-              {visibleTasks.length === 0 && <Empty>업무가 없습니다.</Empty>}
-            </div>
-          </Panel>
+          <section style={workSplit}>
+            <Panel title={taskPanelTitle(activeTab, isAssistant)} right={<span style={softText}>{visibleTasks.length}개</span>}>
+              <div style={taskList}>
+                {visibleTasks.map((task) => (
+                  <TaskCard key={task.id} task={task} currentUserId={user.id} isAssistant={isAssistant} />
+                ))}
+                {visibleTasks.length === 0 && <Empty>업무가 없습니다.</Empty>}
+              </div>
+            </Panel>
+            <Panel title={isAssistant ? "내 업무 캘린더" : "업무 기간 캘린더"} right={<Link href="/calendar" style={smallLink}>상세 캘린더</Link>}>
+              <CompactTaskCalendar tasks={visibleTasks} currentUserId={user.id} isAssistant={isAssistant} />
+            </Panel>
+          </section>
         )}
       </section>
     </main>
@@ -235,7 +250,13 @@ export default async function SimpleTasksPage({ searchParams }: Props = {}) {
 
 function taskWhereForRole(user: { id: string; academyId: string; role: string }) {
   if (user.role === "ASSISTANT") {
-    return { academyId: user.academyId, assigneeId: user.id };
+    return {
+      academyId: user.academyId,
+      OR: [
+        { assigneeId: user.id },
+        { assignees: { some: { assigneeId: user.id } } },
+      ],
+    };
   }
 
   if (user.role === "TEACHER") {
@@ -244,6 +265,7 @@ function taskWhereForRole(user: { id: string; academyId: string; role: string })
       OR: [
         { creatorId: user.id },
         { assigneeId: user.id },
+        { assignees: { some: { assigneeId: user.id } } },
         { classGroup: { teacherId: user.id } },
         { student: { teacherId: user.id } },
       ],
@@ -281,9 +303,23 @@ function normalizeTab(value: string | undefined, isAssistant: boolean) {
 
 function filterTasksByTab(tasks: TaskRow[], tab: string, userId: string) {
   if (tab === "general") return tasks.filter((task) => !task.recurringTaskId);
-  if (tab === "mine") return tasks.filter((task) => task.assigneeId === userId && task.status !== "DONE");
+  if (tab === "mine") return tasks.filter((task) => isTaskAssignedTo(task, userId) && task.status !== "DONE");
   if (tab === "done") return tasks.filter((task) => task.status === "DONE");
   return tasks;
+}
+
+function isTaskAssignedTo(task: TaskRow, userId: string) {
+  return task.assigneeId === userId || task.assignees.some((assignment) => assignment.assigneeId === userId);
+}
+
+function assigneeNames(task: TaskRow) {
+  const names = task.assignees.map((assignment) => assignment.assignee.name);
+  return names.length > 0 ? names.join(", ") : task.assignee.name;
+}
+
+function taskDisplayColor(task: TaskRow, currentUserId: string, isAssistant: boolean) {
+  const personalColor = task.assignees.find((assignment) => assignment.assigneeId === currentUserId)?.color;
+  return (isAssistant ? personalColor : task.color) || task.color || personalColor || statusColor(effectiveStatus(task));
 }
 
 function taskPanelTitle(tab: string, isAssistant: boolean) {
@@ -381,7 +417,6 @@ function RecurringTaskForm({
       <label style={label}>월 반복일<input name="dayOfMonth" type="number" min={1} max={31} defaultValue={row?.dayOfMonth ?? ""} style={input} /></label>
       <label style={label}>시작일<input name="startDate" type="date" required defaultValue={row?.startDate ?? ""} style={input} /></label>
       <label style={label}>종료일<input name="endDate" type="date" defaultValue={row?.endDate ?? ""} style={input} /></label>
-      <label style={label}>마감 시간<input name="dueTime" type="time" defaultValue={row?.dueTime ?? "23:59"} style={input} /></label>
       <label style={checkLabel}><input name="isActive" type="checkbox" defaultChecked={row?.isActive ?? true} /> 활성화</label>
       <label style={{ ...label, gridColumn: "1 / -1" }}>설명
         <textarea name="description" rows={3} defaultValue={row?.description ?? ""} style={textarea} />
@@ -488,12 +523,13 @@ function Td({ children }: { children: ReactNode }) {
 
 function TaskCard({ task, currentUserId, isAssistant }: { task: TaskRow; currentUserId: string; isAssistant: boolean }) {
   const effective = effectiveStatus(task);
-  const canWork = isAssistant ? task.assigneeId === currentUserId : true;
+  const canWork = isAssistant ? isTaskAssignedTo(task, currentUserId) : true;
   const lastRecord = task.submissions[0]?.content || task.comments[0]?.content || task.evidenceSummary;
   const checkedCount = task.checklistItems.filter((item) => item.isDone).length;
+  const displayColor = taskDisplayColor(task, currentUserId, isAssistant);
 
   return (
-    <article style={taskCard}>
+    <article style={{ ...taskCard, borderLeft: `6px solid ${displayColor}` }}>
       <div style={taskMain}>
         <div>
           <div style={taskTopLine}>
@@ -507,14 +543,19 @@ function TaskCard({ task, currentUserId, isAssistant }: { task: TaskRow; current
           </Link>
           <p style={taskDesc}>{task.description || "업무 설명 없음"}</p>
           <div style={metaLine}>
-            <span>담당 {task.assignee.name}</span>
+            <span>담당 {assigneeNames(task)}</span>
             <span>{task.classGroup?.name ?? task.student?.name ?? "공통 업무"}</span>
-            <span>기한 {formatDue(task.dueDate)}</span>
+            <span>{taskPeriodText(task)}</span>
             {task.scheduledDate && <span>예정일 {task.scheduledDate}</span>}
             {task.completedAt && <span>완료 {formatDateTime(task.completedAt)}</span>}
           </div>
         </div>
         <div style={taskSide}>
+          <form action={updateTaskColorAction} style={colorForm}>
+            <input type="hidden" name="taskId" value={task.id} />
+            <input type="color" name="color" defaultValue={displayColor} aria-label="업무 색상" style={colorSwatch} />
+            <button style={tinyButton}>색상</button>
+          </form>
           <span style={task.status === "DONE" ? successBadge : badge}>체크 {checkedCount}/{task.checklistItems.length}</span>
           {task.actualMinutes && <span style={badge}>{task.actualMinutes}분</span>}
           <Link href={`/tasks/${task.id}`} style={smallLink}>상세</Link>
@@ -608,7 +649,7 @@ function MiniTask({ task }: { task: TaskRow }) {
     <div style={miniTask}>
       <div>
         <Link href={`/tasks/${task.id}`} style={miniTitle}>{task.title}</Link>
-        <p>{task.assignee.name} / {task.submissions[0]?.content ?? task.evidenceSummary ?? "처리 메모 없음"}</p>
+        <p>{assigneeNames(task)} / {task.submissions[0]?.content ?? task.evidenceSummary ?? "처리 메모 없음"}</p>
       </div>
       <span style={successBadge}>완료</span>
     </div>
@@ -638,6 +679,71 @@ function Panel({ title, right, children }: { title: string; right?: ReactNode; c
 
 function Empty({ children }: { children: ReactNode }) {
   return <div style={empty}>{children}</div>;
+}
+
+function CompactTaskCalendar({ tasks, currentUserId, isAssistant }: { tasks: TaskRow[]; currentUserId: string; isAssistant: boolean }) {
+  const today = new Date();
+  const days = compactMonthDays(today);
+  const firstKey = toYmd(days[0]);
+  const lastKey = toYmd(days[days.length - 1]);
+  const eventsByDate = new Map<string, TaskRow[]>();
+
+  for (const task of tasks) {
+    const range = taskRange(task);
+    for (let day = range.start; day.getTime() <= range.end.getTime(); day = addDays(day, 1)) {
+      const key = toYmd(day);
+      if (key < firstKey || key > lastKey) continue;
+      const list = eventsByDate.get(key) ?? [];
+      list.push(task);
+      eventsByDate.set(key, list);
+    }
+  }
+
+  return (
+    <div style={compactCalendar}>
+      <div style={compactCalendarHead}>
+        <b>{new Intl.DateTimeFormat("ko-KR", { year: "numeric", month: "long" }).format(today)}</b>
+        <span>{tasks.length}개 업무</span>
+      </div>
+      <div style={weekHeaderGrid}>
+        {["일", "월", "화", "수", "목", "금", "토"].map((day) => (
+          <span key={day}>{day}</span>
+        ))}
+      </div>
+      <div style={compactGrid}>
+        {days.map((day) => {
+          const key = toYmd(day);
+          const list = eventsByDate.get(key) ?? [];
+          const isCurrentMonth = day.getMonth() === today.getMonth();
+          const current = key === toYmd(today);
+          return (
+            <div key={key} style={{ ...compactDay, ...(!isCurrentMonth ? compactMutedDay : {}), ...(current ? compactToday : {}) }}>
+              <div style={compactDayTop}>
+                <b>{day.getDate()}</b>
+                <span>{list.length ? `${list.length}` : ""}</span>
+              </div>
+              <div style={compactEvents}>
+                {list.slice(0, 3).map((task) => (
+                  <Link
+                    key={`${key}-${task.id}`}
+                    href={`/tasks/${task.id}`}
+                    title={`${task.title} / ${assigneeNames(task)}`}
+                    style={{
+                      ...compactEvent,
+                      background: taskDisplayColor(task, currentUserId, isAssistant),
+                    }}
+                  >
+                    {task.title}
+                  </Link>
+                ))}
+                {list.length > 3 && <span style={compactMore}>+{list.length - 3}</span>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 function effectiveStatus(task: Pick<Task, "status" | "dueDate">) {
@@ -706,13 +812,54 @@ function statusBadge(status: string): CSSProperties {
   return badge;
 }
 
+function statusColor(status: string) {
+  if (status === "DONE") return "#16a34a";
+  if (status === "IN_PROGRESS") return "#2563eb";
+  if (status === "HOLD") return "#d97706";
+  if (status === "OVERDUE" || status === "REJECTED") return "#dc2626";
+  return "#64748b";
+}
+
+function taskPeriodText(task: Pick<Task, "startDate" | "dueDate">) {
+  if (task.startDate && task.dueDate) return `기간 ${formatDue(task.startDate)} ~ ${formatDue(task.dueDate)}`;
+  if (task.startDate) return `시작 ${formatDue(task.startDate)}`;
+  if (task.dueDate) return `기한 ${formatDue(task.dueDate)}`;
+  return "날짜 미설정";
+}
+
 function formatDue(date: Date | null) {
   if (!date) return "미설정";
-  return new Intl.DateTimeFormat("ko-KR", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).format(date);
+  return new Intl.DateTimeFormat("ko-KR", { month: "2-digit", day: "2-digit" }).format(date);
 }
 
 function formatDateTime(date: Date) {
   return new Intl.DateTimeFormat("ko-KR", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).format(date);
+}
+
+function compactMonthDays(date: Date) {
+  const first = new Date(date.getFullYear(), date.getMonth(), 1);
+  const start = addDays(first, -first.getDay());
+  return Array.from({ length: 42 }, (_, index) => addDays(start, index));
+}
+
+function taskRange(task: Pick<Task, "startDate" | "dueDate" | "createdAt">) {
+  const start = stripTime(task.startDate ?? task.dueDate ?? task.createdAt);
+  const end = stripTime(task.dueDate ?? task.startDate ?? task.createdAt);
+  return start.getTime() <= end.getTime() ? { start, end } : { start: end, end: start };
+}
+
+function stripTime(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function addDays(date: Date, days: number) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function toYmd(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
 function isToday(date: Date | null) {
@@ -730,13 +877,16 @@ function isDueSoon(date: Date | null) {
 function buildAssigneeStats(tasks: TaskRow[]) {
   const rows = new Map<string, { id: string; name: string; total: number; done: number; incomplete: number; overdue: number; rate: number }>();
   for (const task of tasks) {
-    const current = rows.get(task.assignee.id) ?? { id: task.assignee.id, name: task.assignee.name, total: 0, done: 0, incomplete: 0, overdue: 0, rate: 0 };
-    current.total += 1;
-    if (task.status === "DONE") current.done += 1;
-    else current.incomplete += 1;
-    if (effectiveStatus(task) === "OVERDUE") current.overdue += 1;
-    current.rate = current.total ? Math.round((current.done / current.total) * 100) : 0;
-    rows.set(task.assignee.id, current);
+    const assignments = task.assignees.length > 0 ? task.assignees.map((assignment) => assignment.assignee) : [task.assignee];
+    for (const assignee of assignments) {
+      const current = rows.get(assignee.id) ?? { id: assignee.id, name: assignee.name, total: 0, done: 0, incomplete: 0, overdue: 0, rate: 0 };
+      current.total += 1;
+      if (task.status === "DONE") current.done += 1;
+      else current.incomplete += 1;
+      if (effectiveStatus(task) === "OVERDUE") current.overdue += 1;
+      current.rate = current.total ? Math.round((current.done / current.total) * 100) : 0;
+      rows.set(assignee.id, current);
+    }
   }
   return [...rows.values()].sort((a, b) => b.total - a.total);
 }
@@ -760,6 +910,7 @@ const summaryWarn: CSSProperties = { background: "#fff7ed", borderColor: "#fed7a
 const summaryHold: CSSProperties = { background: "#fffbeb", borderColor: "#fde68a" };
 const summaryDanger: CSSProperties = { background: "#fef2f2", borderColor: "#fecaca" };
 const dashboardGrid: CSSProperties = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 };
+const workSplit: CSSProperties = { display: "grid", gridTemplateColumns: "minmax(0, 1fr) 420px", gap: 12, alignItems: "start" };
 const panel: CSSProperties = { background: "#fff", border: "1px solid #d1d5db", borderRadius: 8, padding: 12 };
 const panelHead: CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 10 };
 const panelTitle: CSSProperties = { margin: 0, fontSize: 18, fontWeight: 950 };
@@ -776,6 +927,8 @@ const taskTitle: CSSProperties = { color: "#111827", textDecoration: "none", fon
 const taskDesc: CSSProperties = { margin: "6px 0", color: "#475569", maxWidth: 760, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" };
 const metaLine: CSSProperties = { display: "flex", gap: 10, flexWrap: "wrap", color: "#6b7280", fontSize: 12, fontWeight: 900 };
 const taskSide: CSSProperties = { display: "grid", gap: 6, justifyItems: "end" };
+const colorForm: CSSProperties = { display: "inline-flex", alignItems: "center", gap: 5 };
+const colorSwatch: CSSProperties = { width: 30, height: 28, border: "1px solid #d1d5db", borderRadius: 6, padding: 2, background: "#fff" };
 const smallLink: CSSProperties = { color: "#2563eb", textDecoration: "none", fontWeight: 950, fontSize: 12 };
 const label: CSSProperties = { display: "flex", flexDirection: "column", gap: 6, fontWeight: 900, fontSize: 13 };
 const inlineActions: CSSProperties = { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" };
@@ -811,3 +964,14 @@ const dangerBadge: CSSProperties = { ...badge, background: "#fee2e2", color: "#9
 const successBadge: CSSProperties = { ...badge, background: "#dcfce7", color: "#166534" };
 const muted: CSSProperties = { color: "#9ca3af", fontSize: 13, fontWeight: 850 };
 const empty: CSSProperties = { border: "1px dashed #d1d5db", borderRadius: 8, padding: 18, textAlign: "center", color: "#6b7280", fontWeight: 900 };
+const compactCalendar: CSSProperties = { display: "grid", gap: 8 };
+const compactCalendarHead: CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, fontSize: 13 };
+const weekHeaderGrid: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4, color: "#64748b", fontSize: 11, fontWeight: 950, textAlign: "center" };
+const compactGrid: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))", gap: 4 };
+const compactDay: CSSProperties = { minHeight: 76, border: "1px solid #e5e7eb", borderRadius: 7, padding: 5, display: "grid", alignContent: "start", gap: 4, background: "#fff" };
+const compactMutedDay: CSSProperties = { background: "#f8fafc", color: "#94a3b8" };
+const compactToday: CSSProperties = { borderColor: "#2563eb", boxShadow: "inset 0 0 0 1px #2563eb" };
+const compactDayTop: CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 11 };
+const compactEvents: CSSProperties = { display: "grid", gap: 3, minWidth: 0 };
+const compactEvent: CSSProperties = { display: "block", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRadius: 5, padding: "3px 4px", color: "#fff", fontSize: 10, fontWeight: 900, textDecoration: "none" };
+const compactMore: CSSProperties = { color: "#64748b", fontSize: 10, fontWeight: 950 };

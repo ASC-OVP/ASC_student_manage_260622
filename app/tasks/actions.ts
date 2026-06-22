@@ -31,6 +31,20 @@ function cleanId(value?: string) {
   return value;
 }
 
+function cleanIds(values: FormDataEntryValue[]) {
+  return Array.from(
+    new Set(
+      values
+        .map((value) => cleanId(String(value).trim()))
+        .filter((value): value is string => Boolean(value))
+    )
+  );
+}
+
+function assigneeIdsValue(formData: FormData) {
+  return cleanIds([...formData.getAll("assigneeIds"), ...formData.getAll("assigneeId")]);
+}
+
 function backPath(formData: FormData, fallback: string) {
   return optionalText(formData, "from") || optionalText(formData, "back") || fallback;
 }
@@ -71,6 +85,12 @@ function parseDueDate(value?: string, time?: string) {
   const raw = value.includes("T") ? value : time ? `${value}T${time}` : `${value}T23:59`;
   const date = new Date(raw);
   return Number.isNaN(date.getTime()) ? undefined : date;
+}
+
+function sanitizeColor(value?: string) {
+  if (!value) return undefined;
+  const color = value.trim();
+  return /^#[0-9a-fA-F]{6}$/.test(color) ? color : undefined;
 }
 
 function classTaskPeriodWarning(
@@ -114,13 +134,26 @@ async function getTaskForUser(taskId: string, user: { id: string; academyId: str
     where: {
       id: taskId,
       academyId: user.academyId,
-      ...(user.role === "ASSISTANT" ? { assigneeId: user.id } : {}),
+      ...(user.role === "ASSISTANT"
+        ? {
+            OR: [
+              { assigneeId: user.id },
+              { assignees: { some: { assigneeId: user.id } } },
+            ],
+          }
+        : {}),
     },
     include: {
       classGroup: { select: { teacherId: true } },
       student: { select: { teacherId: true, assistantId: true } },
+      assignees: { select: { assigneeId: true } },
     },
   });
+}
+
+function isAssignedToUser(task: Awaited<ReturnType<typeof getTaskForUser>>, userId: string) {
+  if (!task) return false;
+  return task.assigneeId === userId || task.assignees.some((assignment) => assignment.assigneeId === userId);
 }
 
 function reviewerScope(task: Awaited<ReturnType<typeof getTaskForUser>>, user: { id: string; role: string }) {
@@ -158,25 +191,26 @@ export async function createTaskAction(formData: FormData) {
   }
 
   const title = text(formData, "title");
-  const assigneeId = text(formData, "assigneeId");
+  const assigneeIds = assigneeIdsValue(formData);
   const reviewerId = cleanId(optionalText(formData, "reviewerId")) ?? user.id;
   const studentId = cleanId(optionalText(formData, "studentId"));
   const classGroupId = cleanId(optionalText(formData, "classGroupId"));
-  const startDate = parseDueDate(optionalText(formData, "startDate"), optionalText(formData, "startTime"));
-  const dueDate = parseDueDate(optionalText(formData, "dueDate"), optionalText(formData, "dueTime"));
+  const startDate = parseDueDate(optionalText(formData, "startDate"));
+  const dueDate = parseDueDate(optionalText(formData, "dueDate"));
   const type = enumValue(optionalText(formData, "type"), TASK_TYPES, TaskType.OTHER);
   const priority = enumValue(optionalText(formData, "priority"), TASK_PRIORITIES, TaskPriority.NORMAL);
+  const color = sanitizeColor(optionalText(formData, "color"));
   const checklistLines = text(formData, "checklist")
     .split(/\r?\n/)
     .map((line) => line.replace(/^[-\d.\s]+/, "").trim())
     .filter(Boolean);
 
-  if (!title || !assigneeId) {
+  if (!title || assigneeIds.length === 0) {
     redirect("/tasks/new?error=empty");
   }
 
-  const [assignee, reviewer, student, classGroup] = await Promise.all([
-    prisma.user.findFirst({ where: { id: assigneeId, academyId: user.academyId, isActive: true }, select: { id: true } }),
+  const [assignees, reviewer, student, classGroup] = await Promise.all([
+    prisma.user.findMany({ where: { id: { in: assigneeIds }, academyId: user.academyId, isActive: true }, select: { id: true } }),
     prisma.user.findFirst({ where: { id: reviewerId, academyId: user.academyId, isActive: true }, select: { id: true } }),
     studentId ? prisma.student.findFirst({ where: { id: studentId, academyId: user.academyId }, select: { id: true } }) : null,
     classGroupId
@@ -187,7 +221,8 @@ export async function createTaskAction(formData: FormData) {
       : null,
   ]);
 
-  if (!assignee) redirect("/tasks/new?error=empty");
+  const validAssigneeIds = assigneeIds.filter((id) => assignees.some((assignee) => assignee.id === id));
+  if (validAssigneeIds.length === 0) redirect("/tasks/new?error=empty");
 
   let createdTaskId: string | null = null;
 
@@ -203,16 +238,25 @@ export async function createTaskAction(formData: FormData) {
         type,
         studentId: student?.id,
         classGroupId: classGroup?.id,
-        assigneeId,
+        assigneeId: validAssigneeIds[0],
         creatorId: user.id,
         reviewerId: reviewer?.id ?? user.id,
         priority,
+        color,
         dueDate,
       },
     });
     createdTaskId = task.id;
 
     await tx.$executeRaw`UPDATE "Task" SET "startDate" = ${startDate ?? null} WHERE "id" = ${task.id}`;
+    await tx.taskAssignee.createMany({
+      data: validAssigneeIds.map((id) => ({
+        academyId: user.academyId,
+        taskId: task.id,
+        assigneeId: id,
+        color,
+      })),
+    });
     await addHistory(tx, {
       taskId: task.id,
       fromStatus: null,
@@ -238,7 +282,7 @@ export async function createTaskAction(formData: FormData) {
     entityType: "Task",
     entityId: createdTaskId,
     summary: `업무 생성: ${title}`,
-    metadata: { assigneeId, classGroupId: classGroup?.id ?? null, studentId: student?.id ?? null, priority, type },
+    metadata: { assigneeId: validAssigneeIds[0], assigneeIds: validAssigneeIds, classGroupId: classGroup?.id ?? null, studentId: student?.id ?? null, priority, type },
   });
 
   revalidatePath("/tasks");
@@ -478,7 +522,7 @@ export async function startTaskAction(formData: FormData) {
 
   const task = await getTaskForUser(taskId, user);
   if (!task) return;
-  if (user.role === "ASSISTANT" && task.assigneeId !== user.id) return;
+  if (user.role === "ASSISTANT" && !isAssignedToUser(task, user.id)) return;
   if (user.role !== "ASSISTANT" && !reviewerScope(task, user)) return;
 
   await prisma.$transaction(async (tx) => {
@@ -522,7 +566,7 @@ export async function submitTaskAction(formData: FormData) {
 
   const task = await getTaskForUser(taskId, user);
   if (!task) return;
-  if (user.role === "ASSISTANT" && task.assigneeId !== user.id) return;
+  if (user.role === "ASSISTANT" && !isAssignedToUser(task, user.id)) return;
   if (user.role !== "ASSISTANT" && !reviewerScope(task, user)) return;
 
   await prisma.$transaction(async (tx) => {
@@ -639,7 +683,7 @@ export async function updateTaskChecklistItemAction(formData: FormData) {
 
   const task = await getTaskForUser(taskId, user);
   if (!task) return;
-  if (user.role === "ASSISTANT" && task.assigneeId !== user.id) return;
+  if (user.role === "ASSISTANT" && !isAssignedToUser(task, user.id)) return;
   if (user.role !== "ASSISTANT" && !reviewerScope(task, user)) return;
 
   await prisma.taskChecklistItem.updateMany({
@@ -658,6 +702,40 @@ export async function updateTaskChecklistItemAction(formData: FormData) {
 // 이름 다르게 import해도 깨지지 않도록 유지
 export async function updateTaskStatusAction(formData: FormData) {
   return updateTaskStatus(formData);
+}
+
+export async function updateTaskColorAction(formData: FormData) {
+  const user = await requireUser();
+  const taskId = text(formData, "taskId");
+  const color = sanitizeColor(text(formData, "color"));
+  if (!taskId || !color) return;
+
+  const task = await getTaskForUser(taskId, user);
+  if (!task) return;
+
+  if (user.role === "ASSISTANT") {
+    if (!isAssignedToUser(task, user.id)) return;
+    await prisma.taskAssignee.upsert({
+      where: { taskId_assigneeId: { taskId, assigneeId: user.id } },
+      update: { color },
+      create: {
+        academyId: user.academyId,
+        taskId,
+        assigneeId: user.id,
+        color,
+      },
+    });
+  } else {
+    if (!reviewerScope(task, user)) return;
+    await prisma.task.update({
+      where: { id: taskId },
+      data: { color },
+    });
+  }
+
+  revalidatePath("/tasks");
+  revalidatePath(`/tasks/${taskId}`);
+  revalidatePath("/calendar");
 }
 
 export async function deleteTaskAction(formData: FormData) {

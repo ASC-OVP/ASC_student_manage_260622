@@ -11,6 +11,7 @@ const menus = [
   { name: "\uCE98\uB9B0\uB354", href: "/calendar", icon: "K" },
   { name: "\uBA54\uBAA8 \uAD00\uB9AC", href: "/memos", icon: "M" },
   { name: "\uC5C5\uBB34 \uAD00\uB9AC", href: "/tasks", icon: "T" },
+  { name: "\uADFC\uBB34/\uAE09\uC5EC", href: "/work", icon: "W" },
   { name: "OMR \uAC80\uC0AC", href: "/omr", icon: "O" },
   { name: "\uC6B4\uC601 \uC548\uC815\uD654", href: "/operations", icon: "B" },
   { name: "\uC9C1\uC6D0/\uACC4\uC815", href: "/users", icon: "U" },

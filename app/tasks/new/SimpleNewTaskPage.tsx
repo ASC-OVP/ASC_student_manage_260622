@@ -58,7 +58,7 @@ export default async function SimpleNewTaskPage({ searchParams }: Props) {
       <section style={card}>
         <Link href="/tasks" style={back}>업무 목록</Link>
         <h1 style={title}>업무 생성</h1>
-        <p style={desc}>조교나 담당자에게 업무를 배정하고, 기한과 체크리스트를 남깁니다. 완료는 담당자가 직접 처리 기록으로 남깁니다.</p>
+        <p style={desc}>조교 여러 명에게 같은 업무를 배정하고, 기간과 체크리스트를 날짜 기준으로 남깁니다. 완료는 담당자가 직접 처리 기록으로 남깁니다.</p>
         {params.error === "permission" && <p style={error}>업무를 생성할 권한이 없습니다.</p>}
         {params.error === "empty" && <p style={error}>업무명과 담당자를 입력해 주세요.</p>}
 
@@ -69,12 +69,18 @@ export default async function SimpleNewTaskPage({ searchParams }: Props) {
               {taskTypes.map(([value, labelText]) => <option key={value} value={value}>{labelText}</option>)}
             </select>
           </label>
-          <label style={label}>담당자
-            <select name="assigneeId" required style={input}>
-              <option value="">담당자 선택</option>
-              {assignees.map((member) => <option key={member.id} value={member.id}>{member.name} / {roleText(member.role)}</option>)}
-            </select>
-          </label>
+          <fieldset style={assigneeField}>
+            <legend>담당 조교/직원</legend>
+            <div style={assigneeGrid}>
+              {assignees.map((member) => (
+                <label key={member.id} style={checkChip}>
+                  <input name="assigneeIds" type="checkbox" value={member.id} />
+                  <span>{member.name}</span>
+                  <small>{roleText(member.role)}</small>
+                </label>
+              ))}
+            </div>
+          </fieldset>
           <label style={label}>관련 반
             <select name="classGroupId" style={input}>
               <option value="">없음</option>
@@ -99,10 +105,9 @@ export default async function SimpleNewTaskPage({ searchParams }: Props) {
               <option value="URGENT">긴급</option>
             </select>
           </label>
+          <label style={label}>업무 색상<input type="color" name="color" defaultValue="#2563eb" style={colorInput} /></label>
           <label style={label}>시작일<input type="date" name="startDate" defaultValue={defaultDate} style={input} /></label>
-          <label style={label}>시작시간<input type="time" name="startTime" style={input} /></label>
           <label style={label}>마감일<input type="date" name="dueDate" defaultValue={defaultDate} style={input} /></label>
-          <label style={label}>마감시간<input type="time" name="dueTime" style={input} /></label>
           <label style={{ ...label, gridColumn: "1 / -1" }}>업무 설명
             <textarea name="description" rows={5} placeholder="업무 배경, 처리 기준, 확인할 내용을 적어주세요." style={{ ...input, resize: "vertical" }} />
           </label>
@@ -132,5 +137,9 @@ const desc: CSSProperties = { margin: "0 0 18px", color: "#6b7280" };
 const form: CSSProperties = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 };
 const label: CSSProperties = { display: "flex", flexDirection: "column", gap: 8, fontWeight: 900 };
 const input: CSSProperties = { padding: "12px", border: "1px solid #d1d5db", borderRadius: 8, background: "#fff", color: "#111827" };
+const colorInput: CSSProperties = { ...input, height: 44, padding: 6 };
+const assigneeField: CSSProperties = { gridColumn: "1 / -1", border: "1px solid #d1d5db", borderRadius: 8, padding: 12, fontWeight: 900 };
+const assigneeGrid: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 8, marginTop: 8 };
+const checkChip: CSSProperties = { display: "grid", gridTemplateColumns: "auto 1fr auto", alignItems: "center", gap: 8, border: "1px solid #e5e7eb", borderRadius: 8, padding: "9px 10px", background: "#f9fafb", fontSize: 13 };
 const btn: CSSProperties = { gridColumn: "1 / -1", background: "#111827", color: "#fff", border: 0, borderRadius: 8, padding: "12px", fontWeight: 950 };
 const error: CSSProperties = { background: "#fee2e2", color: "#991b1b", padding: 12, borderRadius: 8, fontWeight: 900 };

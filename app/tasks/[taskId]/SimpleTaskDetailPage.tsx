@@ -15,12 +15,20 @@ export default async function SimpleTaskDetailPage({ params }: Props) {
     where: {
       id: taskId,
       academyId: user.academyId,
-      ...(user.role === "ASSISTANT" ? { assigneeId: user.id } : {}),
+      ...(user.role === "ASSISTANT"
+        ? {
+            OR: [
+              { assigneeId: user.id },
+              { assignees: { some: { assigneeId: user.id } } },
+            ],
+          }
+        : {}),
       ...(user.role === "TEACHER"
         ? {
             OR: [
               { creatorId: user.id },
               { assigneeId: user.id },
+              { assignees: { some: { assigneeId: user.id } } },
               { classGroup: { teacherId: user.id } },
               { student: { teacherId: user.id } },
             ],
@@ -29,6 +37,7 @@ export default async function SimpleTaskDetailPage({ params }: Props) {
     },
     include: {
       assignee: true,
+      assignees: { orderBy: { createdAt: "asc" }, include: { assignee: true } },
       creator: true,
       student: true,
       classGroup: { include: { teacher: true } },
@@ -42,7 +51,8 @@ export default async function SimpleTaskDetailPage({ params }: Props) {
   if (!task) notFound();
 
   const isAssistant = user.role === "ASSISTANT";
-  const canWork = isAssistant ? task.assigneeId === user.id : true;
+  const assigneeNames = task.assignees.length > 0 ? task.assignees.map((assignment) => assignment.assignee.name).join(", ") : task.assignee.name;
+  const canWork = isAssistant ? task.assigneeId === user.id || task.assignees.some((assignment) => assignment.assigneeId === user.id) : true;
   const canDelete =
     !isAssistant &&
     (user.role === "ADMIN" ||
@@ -64,7 +74,7 @@ export default async function SimpleTaskDetailPage({ params }: Props) {
               <span style={statusBadge(effective)}>{statusText(effective)}</span>
               <span style={priorityBadge(task.priority)}>{priorityText(task.priority)}</span>
               <span style={badge}>{typeText(task.type)}</span>
-              <span>담당 {task.assignee.name}</span>
+              <span>담당 {assigneeNames}</span>
               <span>생성 {task.creator.name}</span>
             </div>
           </div>
@@ -88,7 +98,7 @@ export default async function SimpleTaskDetailPage({ params }: Props) {
 
         <div style={grid}>
           <Panel title="업무 기본 정보">
-            <Info label="담당자" value={task.assignee.name} />
+            <Info label="담당자" value={assigneeNames} />
             <Info label="생성자" value={task.creator.name} />
             <Info label="관련 반" value={task.classGroup ? `${task.classGroup.teacher?.name ? `${task.classGroup.teacher.name} / ` : ""}${task.classGroup.name}` : "-"} />
             <Info label="관련 학생" value={task.student?.name ?? "-"} />
@@ -290,7 +300,7 @@ function statusBadge(status: string): CSSProperties {
 
 function formatDue(date: Date | null) {
   if (!date) return "미설정";
-  return new Intl.DateTimeFormat("ko-KR", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).format(date);
+  return new Intl.DateTimeFormat("ko-KR", { month: "2-digit", day: "2-digit" }).format(date);
 }
 
 function formatDateTime(date: Date) {

@@ -26,6 +26,9 @@ model Academy {
   questionRecords      QuestionRecord[]
   schoolScoreRecords   SchoolScoreRecord[]
   tasks                Task[]
+  taskAssignees        TaskAssignee[]
+  assistantWorkShifts  AssistantWorkShift[]
+  calendarPrivateMemos CalendarPrivateMemo[]
   omrUploads           OmrUpload[]
   exams                Exam[]
   examResults          ExamResult[]
@@ -70,6 +73,7 @@ model User {
   classGroupAssistantLinks ClassGroupAssistant[] @relation("ClassGroupAssistantUser")
 
   assignedTasks       Task[]              @relation("TaskAssignee")
+  taskAssignments      TaskAssignee[]      @relation("TaskAssignmentUser")
   createdTasks        Task[]              @relation("TaskCreator")
   reviewTasks         Task[]              @relation("TaskReviewer")
   assignedRecurringTasks RecurringTask[]  @relation("RecurringTaskAssignee")
@@ -82,6 +86,9 @@ model User {
   memos             StudentMemo[]
   classMemos        ClassMemo[]
   taskComments      TaskComment[]
+  assistantWorkShifts AssistantWorkShift[] @relation("AssistantWorkShiftAssistant")
+  createdWorkShifts   AssistantWorkShift[] @relation("AssistantWorkShiftCreator")
+  calendarPrivateMemos CalendarPrivateMemo[]
   counselingRecords CounselingRecord[] @relation("CounselingOwner")
   clinicRecords     ClinicRecord[]     @relation("ClinicOwner")
   questionRecords   QuestionRecord[]   @relation("QuestionOwner")
@@ -448,6 +455,7 @@ model Task {
 
   status          TaskStatus   @default(TODO)
   priority        TaskPriority @default(NORMAL)
+  color           String?
   startDate       DateTime?
   dueDate         DateTime?
   actualMinutes   Int?
@@ -472,6 +480,7 @@ model Task {
   submissions    TaskSubmission[]
   reviews        TaskReview[]
   checklistItems TaskChecklistItem[]
+  assignees      TaskAssignee[]
 
   @@index([academyId])
   @@index([assigneeId])
@@ -481,6 +490,65 @@ model Task {
   @@index([recurringTaskId])
   @@index([scheduledDate])
   @@unique([recurringTaskId, scheduledDate])
+}
+
+model TaskAssignee {
+  id         String   @id @default(uuid())
+  academyId  String
+  taskId     String
+  assigneeId String
+  color      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  academy  Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  task     Task    @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  assignee User    @relation("TaskAssignmentUser", fields: [assigneeId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, assigneeId])
+  @@index([academyId])
+  @@index([taskId])
+  @@index([assigneeId])
+}
+
+model AssistantWorkShift {
+  id           String   @id @default(uuid())
+  academyId    String
+  assistantId  String
+  workDate     String
+  startTime    String
+  endTime      String
+  breakMinutes Int      @default(0)
+  hourlyWage   Int      @default(0)
+  status       String   @default("SCHEDULED")
+  memo         String?
+  createdById  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  assistant User    @relation("AssistantWorkShiftAssistant", fields: [assistantId], references: [id], onDelete: Cascade)
+  createdBy User?   @relation("AssistantWorkShiftCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([academyId, workDate])
+  @@index([assistantId, workDate])
+  @@index([status])
+}
+
+model CalendarPrivateMemo {
+  id        String   @id @default(uuid())
+  academyId String
+  userId    String
+  date      String
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  academy Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@index([academyId, date])
 }
 
 model RecurringTask {

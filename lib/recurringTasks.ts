@@ -113,6 +113,14 @@ export async function generateDueRecurringTasks(user: { id: string; academyId: s
           },
         });
 
+        await tx.taskAssignee.create({
+          data: {
+            academyId: template.academyId,
+            taskId: task.id,
+            assigneeId: template.assigneeId,
+          },
+        });
+
         await tx.taskStatusHistory.create({
           data: {
             taskId: task.id,

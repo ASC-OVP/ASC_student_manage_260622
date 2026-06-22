@@ -18,7 +18,7 @@ export const dynamic = "force-dynamic";
 export default async function CalendarPage() {
   const user = await requireUser();
 
-  const [classGroups, tasks, classRoomRows, taskStartRows] = await Promise.all([
+  const [classGroups, tasks, classRoomRows, taskStartRows, privateMemos] = await Promise.all([
     prisma.classGroup.findMany({
       where: classGroupWhereForUser(user),
       orderBy: [{ status: "asc" }, { name: "asc" }],
@@ -37,12 +37,21 @@ export default async function CalendarPage() {
       orderBy: [{ dueDate: "asc" }, { createdAt: "desc" }],
       include: {
         assignee: { select: { id: true, name: true } },
+        assignees: {
+          orderBy: { createdAt: "asc" },
+          include: { assignee: { select: { id: true, name: true } } },
+        },
         classGroup: { select: { id: true, name: true, subject: true, teacherId: true, teacher: { select: { id: true, name: true } } } },
         student: { select: { id: true, name: true, teacherId: true } },
       },
     }),
     prisma.$queryRaw<Array<{ id: string; room: string | null }>>`SELECT "id", "room" FROM "ClassGroup" WHERE "academyId" = ${user.academyId}`,
     prisma.$queryRaw<Array<{ id: string; startDate: Date | string | null }>>`SELECT "id", "startDate" FROM "Task" WHERE "academyId" = ${user.academyId}`,
+    prisma.calendarPrivateMemo.findMany({
+      where: { academyId: user.academyId, userId: user.id },
+      orderBy: { date: "asc" },
+      select: { date: true, content: true },
+    }),
   ]);
 
   const roomByClassId = new Map(classRoomRows.map((row) => [row.id, row.room]));
@@ -51,7 +60,7 @@ export default async function CalendarPage() {
   const tasksWithStartDate = tasks.map((task) => ({ ...task, startDate: startDateByTaskId.get(task.id) ?? null }));
 
   const classEvents = classGroupsWithRoom.flatMap((classGroup) => classEventsFromClassGroup(classGroup));
-  const taskEvents = tasksWithStartDate.map((task) => taskEvent(task));
+  const taskEvents = tasksWithStartDate.map((task) => taskEvent(task, user.id, user.role === "ASSISTANT"));
   const events = [...classEvents, ...taskEvents];
   const overdueCount = tasks.filter((task) => effectiveTaskStatus(task.status, task.dueDate) === "OVERDUE").length;
   const activeClassCount = classGroups.filter((classGroup) => effectiveClassStatus(classGroup) === "ACTIVE").length;
@@ -87,7 +96,11 @@ export default async function CalendarPage() {
                   ? [{ id: classGroup.assistant.id, label: classGroup.assistant.name }]
                   : []
             ),
-            ...tasksWithStartDate.map((task) => ({ id: task.assignee.id, label: task.assignee.name })),
+            ...tasksWithStartDate.flatMap((task) =>
+              task.assignees.length > 0
+                ? task.assignees.map((assignment) => ({ id: assignment.assignee.id, label: assignment.assignee.name }))
+                : [{ id: task.assignee.id, label: task.assignee.name }]
+            ),
           ])}
           classGroups={classGroupsWithRoom.map((classGroup) => ({ id: classGroup.id, label: classGroup.name }))}
           subjects={uniqueOptions([
@@ -104,6 +117,7 @@ export default async function CalendarPage() {
               return { id: status, label: taskStatusLabel(status) };
             }),
           ])}
+          privateMemos={privateMemos}
         />
       </section>
     </main>
@@ -112,7 +126,13 @@ export default async function CalendarPage() {
 
 function taskWhereForCalendar(user: { id: string; academyId: string; role: string }) {
   if (user.role === "ASSISTANT") {
-    return { academyId: user.academyId, assigneeId: user.id };
+    return {
+      academyId: user.academyId,
+      OR: [
+        { assigneeId: user.id },
+        { assignees: { some: { assigneeId: user.id } } },
+      ],
+    };
   }
 
   if (user.role === "TEACHER") {
@@ -121,6 +141,7 @@ function taskWhereForCalendar(user: { id: string; academyId: string; role: strin
       OR: [
         { creatorId: user.id },
         { assigneeId: user.id },
+        { assignees: { some: { assigneeId: user.id } } },
         { classGroup: { teacherId: user.id } },
         { student: { teacherId: user.id } },
       ],
@@ -202,16 +223,22 @@ function taskEvent(task: {
   description: string | null;
   status: TaskStatus;
   priority: string;
+  color: string | null;
   startDate: Date | null;
   dueDate: Date | null;
   createdAt: Date;
   assignee: { id: string; name: string };
+  assignees: Array<{ assigneeId: string; color: string | null; assignee: { id: string; name: string } }>;
   classGroup: { id: string; name: string; subject: string | null; teacherId: string | null; teacher: { id: string; name: string } | null } | null;
   student: { id: string; name: string; teacherId: string | null } | null;
-}): AcademyCalendarEvent {
+}, currentUserId: string, isAssistant: boolean): AcademyCalendarEvent {
   const range = normalizeTaskRange(task.startDate, task.dueDate, task.createdAt);
   const status = effectiveTaskStatus(task.status, task.dueDate);
-  const color = taskColor(status);
+  const assignmentColor = task.assignees.find((assignment) => assignment.assigneeId === currentUserId)?.color;
+  const color = (isAssistant ? assignmentColor : task.color) || task.color || assignmentColor || taskColor(status);
+  const taskAssignees = task.assignees.length > 0 ? task.assignees : [{ assigneeId: task.assignee.id, color: null, assignee: task.assignee }];
+  const assigneeIds = taskAssignees.map((assignment) => assignment.assigneeId);
+  const assigneeName = taskAssignees.map((assignment) => assignment.assignee.name).join(", ");
 
   return {
     id: `task-${task.id}`,
@@ -225,8 +252,9 @@ function taskEvent(task: {
     extendedProps: {
       type: "task",
       sourceId: task.id,
-      assigneeId: task.assignee.id,
-      assigneeName: task.assignee.name,
+      assigneeId: assigneeIds[0] ?? task.assignee.id,
+      assigneeIds,
+      assigneeName,
       teacherId: task.classGroup?.teacher?.id ?? task.classGroup?.teacherId ?? task.student?.teacherId ?? null,
       teacherName: task.classGroup?.teacher?.name ?? null,
       classGroupId: task.classGroup?.id ?? null,

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { CSSProperties } from "react";
+import StudentLessonSpreadsheet, { type LessonClassGroupOption } from "@/components/StudentLessonSpreadsheet";
 import StudentSheetMatrix, { type ClassGroupOption, type StaffOption, type StudentSheetRow } from "@/components/StudentSheetMatrix";
 import { requireUser } from "@/lib/auth";
 import { getStudentSheetCustomSettings, getStudentSheetOptionSettings } from "@/lib/academySettings";
@@ -21,7 +22,7 @@ type Props = {
   }>;
 };
 
-const validTabs = new Set(["all", "attendance", "assignment", "score"]);
+const validTabs = new Set(["all", "lesson", "attendance", "assignment", "score"]);
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +30,7 @@ export default async function StudentsPage({ searchParams }: Props) {
   const user = await requireUser();
   const sp = (await searchParams) ?? {};
   const date = isDate(sp.date) ? String(sp.date) : todayKoreaDate();
-  const mode = validTabs.has(sp.tab ?? "") ? String(sp.tab) : "all";
+  const mode = validTabs.has(sp.tab ?? "") ? String(sp.tab) : "lesson";
   const classGroupId = cleanFilter(sp.classGroupId);
   const teacherId = cleanFilter(sp.teacherId);
   const assistantId = cleanFilter(sp.assistantId);
@@ -70,9 +71,9 @@ export default async function StudentsPage({ searchParams }: Props) {
       where: studentWhere,
       orderBy: [{ name: "asc" }, { createdAt: "asc" }],
       include: {
-        attendanceRecords: { where: { date }, take: 1 },
-        assignmentRecords: { where: { date }, orderBy: { updatedAt: "desc" }, take: 1 },
-        scoreRecords: { where: { date }, orderBy: { updatedAt: "desc" }, take: 1 },
+        attendanceRecords: { orderBy: { date: "desc" }, select: { date: true, status: true } },
+        assignmentRecords: { orderBy: [{ date: "desc" }, { updatedAt: "desc" }], select: { date: true, status: true, score: true, title: true } },
+        scoreRecords: { orderBy: [{ date: "desc" }, { updatedAt: "desc" }], select: { date: true, title: true, score: true, maxScore: true } },
         memos: { orderBy: [{ isImportant: "desc" }, { createdAt: "desc" }], take: 1 },
         studentClasses: {
           orderBy: [{ isPrimary: "desc" }, { createdAt: "desc" }],
@@ -99,18 +100,26 @@ export default async function StudentsPage({ searchParams }: Props) {
     getStudentSheetCustomSettings(user.academyId),
   ]);
 
-  const classGroupOptions: ClassGroupOption[] = classGroups.map((classGroup) => ({
+  const classGroupOptions: Array<ClassGroupOption & LessonClassGroupOption> = classGroups.map((classGroup) => ({
     id: classGroup.id,
     name: classGroup.name,
     teacherName: classGroup.teacher?.name ?? "",
+    startDate: classGroup.startDate,
+    endDate: classGroup.endDate,
+    daysOfWeek: classGroup.daysOfWeek,
+    startTime: classGroup.startTime,
+    endTime: classGroup.endTime,
+    schedule: classGroup.schedule,
   }));
   const teacherOptions: StaffOption[] = teachers.map((teacher) => ({ id: teacher.id, name: teacher.name, role: teacher.role }));
   const assistantOptions: StaffOption[] = assistants.map((assistant) => ({ id: assistant.id, name: assistant.name, role: assistant.role }));
   const rows: StudentSheetRow[] = students.map((student, index) => {
     const primaryClass = student.studentClasses.find((membership) => membership.isPrimary) ?? student.studentClasses[0];
-    const attendance = student.attendanceRecords[0];
-    const assignment = student.assignmentRecords[0];
-    const score = student.scoreRecords[0];
+    const attendance = student.attendanceRecords.find((record) => record.date === date);
+    const assignment = student.assignmentRecords.find((record) => record.date === date);
+    const score = student.scoreRecords.find((record) => record.date === date);
+    const attendanceStatus = attendance?.status ?? "";
+    const assignmentStatus = assignment?.status ?? "";
 
     return {
       id: student.id,
@@ -125,13 +134,43 @@ export default async function StudentsPage({ searchParams }: Props) {
       subject: student.subject ?? "",
       currentLevel: student.currentLevel ?? "",
       memo: student.memos[0]?.content ?? student.memo ?? "",
-      attendance: attendance?.status ?? "",
-      assignment: assignment?.status ?? "",
+      attendance: sheetOptionLabel(optionSettings.attendanceOptions, attendanceStatus),
+      assignment: sheetOptionLabel(optionSettings.assignmentOptions, assignmentStatus),
       assignmentScore: assignment?.score ?? null,
       score: score?.score ?? null,
       maxScore: score?.maxScore ?? 100,
+      attendanceByDate: Object.fromEntries(
+        student.attendanceRecords.map((record) => [record.date, sheetOptionLabel(optionSettings.attendanceOptions, record.status)])
+      ),
+      assignmentByDate: Object.fromEntries(
+        student.assignmentRecords.map((record) => [record.date, sheetOptionLabel(optionSettings.assignmentOptions, record.status)])
+      ),
+      scoreByDate: Object.fromEntries(
+        student.scoreRecords
+          .filter((record) => record.score !== null)
+          .map((record) => [record.date, String(record.score)])
+      ),
       customValues: customSettings.customValues[student.id] ?? {},
     };
+  });
+
+  const rowClassGroupIds = Array.from(new Set(rows.map((row) => row.classGroupId).filter(Boolean)));
+  const fallbackLessonClassGroupId =
+    rowClassGroupIds.length === 1
+      ? rowClassGroupIds[0]
+      : classGroupOptions.find((classGroup) => classGroup.startDate || classGroup.daysOfWeek || classGroup.schedule)?.id ??
+        classGroupOptions[0]?.id ??
+        null;
+  const lessonClassGroupId = mode === "lesson" ? classGroupId ?? fallbackLessonClassGroupId : classGroupId;
+  const lessonRows = mode === "lesson" && lessonClassGroupId ? rows.filter((row) => row.classGroupId === lessonClassGroupId) : rows;
+  const filterClassGroupValue = classGroupId ?? (mode === "lesson" ? lessonClassGroupId ?? "" : "");
+  const lessonPreservedQuery = buildPreservedQuery({
+    date,
+    q,
+    classGroupId: lessonClassGroupId,
+    teacherId,
+    assistantId,
+    school,
   });
 
   return (
@@ -151,7 +190,7 @@ export default async function StudentsPage({ searchParams }: Props) {
           <input name="date" type="date" defaultValue={date} style={input} />
           <input name="q" defaultValue={q} placeholder="이름, 학교, 연락처 검색" style={input} />
           <input name="school" defaultValue={school} placeholder="학교" style={input} />
-          <select name="classGroupId" defaultValue={classGroupId ?? ""} style={input}>
+          <select name="classGroupId" defaultValue={filterClassGroupValue} style={input}>
             <option value="">전체 반</option>
             {classGroupOptions.map((classGroup) => (
               <option key={classGroup.id} value={classGroup.id}>
@@ -175,18 +214,28 @@ export default async function StudentsPage({ searchParams }: Props) {
           <Link href="/students" style={resetButton}>초기화</Link>
         </form>
 
-        <StudentSheetMatrix
-          date={date}
-          mode={mode}
-          rows={rows}
-          attendanceOptions={optionSettings.attendanceOptions}
-          assignmentOptions={optionSettings.assignmentOptions}
-          customColumns={customSettings.customColumns}
-          classGroupOptions={classGroupOptions}
-          teachers={teacherOptions}
-          assistants={assistantOptions}
-          preservedQuery={preservedQuery}
-        />
+        {mode === "lesson" ? (
+          <StudentLessonSpreadsheet
+            rows={lessonRows}
+            customColumns={customSettings.customColumns}
+            preservedQuery={lessonPreservedQuery}
+            selectedClassGroupId={lessonClassGroupId}
+            classGroups={classGroupOptions}
+          />
+        ) : (
+          <StudentSheetMatrix
+            date={date}
+            mode={mode}
+            rows={rows}
+            attendanceOptions={optionSettings.attendanceOptions}
+            assignmentOptions={optionSettings.assignmentOptions}
+            customColumns={customSettings.customColumns}
+            classGroupOptions={classGroupOptions}
+            teachers={teacherOptions}
+            assistants={assistantOptions}
+            preservedQuery={preservedQuery}
+          />
+        )}
       </section>
     </main>
   );
@@ -207,6 +256,10 @@ function buildPreservedQuery(params: Record<string, string | null | undefined>) 
     if (value) query.set(key, value);
   }
   return query.toString();
+}
+
+function sheetOptionLabel(options: Array<{ value: string; label: string }>, value: string) {
+  return options.find((option) => option.value === value)?.label ?? value;
 }
 
 const page: CSSProperties = { minHeight: "100vh", background: "#f3f4f6", color: "#111827" };

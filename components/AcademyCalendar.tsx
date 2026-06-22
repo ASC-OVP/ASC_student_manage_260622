@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
+import { saveCalendarPrivateMemoAction } from "@/app/calendar/actions";
 
 type CalendarEventType = "class" | "task";
 type ViewMode = "month" | "week" | "day";
@@ -15,6 +16,7 @@ type CalendarExtendedProps = {
   assistantId?: string | null;
   assistantName?: string | null;
   assigneeId?: string | null;
+  assigneeIds?: string[];
   assigneeName?: string | null;
   classGroupId?: string | null;
   className?: string | null;
@@ -59,6 +61,7 @@ type Props = {
   classGroups: FilterOption[];
   subjects: FilterOption[];
   statuses: FilterOption[];
+  privateMemos?: Array<{ date: string; content: string }>;
 };
 
 type MaterializedEvent = {
@@ -78,7 +81,7 @@ type SelectedEvent = {
   props: CalendarExtendedProps;
 };
 
-export default function AcademyCalendar({ events, teachers, assistants, classGroups, subjects, statuses }: Props) {
+export default function AcademyCalendar({ events, teachers, assistants, classGroups, subjects, statuses, privateMemos = [] }: Props) {
   const [kind, setKind] = useState("all");
   const [teacherId, setTeacherId] = useState("all");
   const [assistantId, setAssistantId] = useState("all");
@@ -89,13 +92,14 @@ export default function AcademyCalendar({ events, teachers, assistants, classGro
   const [cursorDate, setCursorDate] = useState(() => stripTime(new Date()));
   const [selected, setSelected] = useState<SelectedEvent | null>(null);
   const [clickedDate, setClickedDate] = useState<string | null>(null);
+  const memoByDate = useMemo(() => new Map(privateMemos.map((memo) => [memo.date, memo.content])), [privateMemos]);
 
   const filteredEvents = useMemo(() => {
     return events.filter((event) => {
       const props = event.extendedProps;
       if (kind !== "all" && props.type !== kind) return false;
       if (teacherId !== "all" && props.teacherId !== teacherId) return false;
-      if (assistantId !== "all" && props.assistantId !== assistantId && props.assigneeId !== assistantId) return false;
+      if (assistantId !== "all" && props.assistantId !== assistantId && props.assigneeId !== assistantId && !props.assigneeIds?.includes(assistantId)) return false;
       if (classGroupId !== "all" && props.classGroupId !== classGroupId && props.sourceId !== classGroupId) return false;
       if (subject !== "all" && props.subject !== subject) return false;
       if (status !== "all" && props.status !== status) return false;
@@ -234,7 +238,10 @@ export default function AcademyCalendar({ events, teachers, assistants, classGro
                 >
                   <div style={dayHeader}>
                     <b>{dayLabel(day, viewMode)}</b>
-                    <span>{weekdayLabel(day)}</span>
+                    <span style={dayHeaderRight}>
+                      {memoByDate.has(dateKey) && <i style={memoDot} aria-label="개인 메모" />}
+                      {weekdayLabel(day)}
+                    </span>
                   </div>
                   <div style={eventList}>
                     {list.length === 0 ? (
@@ -270,7 +277,7 @@ export default function AcademyCalendar({ events, teachers, assistants, classGro
         </div>
 
         <aside style={sidePanel}>
-          {selected ? <EventDetail selected={selected} /> : clickedDate ? <DateQuickAdd date={clickedDate} /> : <EmptyDetail />}
+          {selected ? <EventDetail selected={selected} /> : clickedDate ? <DateQuickAdd date={clickedDate} memo={memoByDate.get(clickedDate) ?? ""} /> : <EmptyDetail />}
         </aside>
       </section>
     </div>
@@ -340,12 +347,19 @@ function EventDetail({ selected }: { selected: SelectedEvent }) {
   );
 }
 
-function DateQuickAdd({ date }: { date: string }) {
+function DateQuickAdd({ date, memo }: { date: string; memo: string }) {
   return (
     <section style={detailCard}>
       <span style={typeBadge("date")}>{date}</span>
       <h2 style={detailTitle}>이 날짜에 추가</h2>
-      <p style={description}>선택한 날짜를 기준으로 업무를 만들거나, 반 관리 화면에서 수업 요일과 시간을 등록할 수 있습니다.</p>
+      <form action={saveCalendarPrivateMemoAction} style={memoForm}>
+        <input type="hidden" name="date" value={date} />
+        <label style={memoLabel}>
+          개인 메모
+          <textarea name="content" rows={5} defaultValue={memo} style={memoTextarea} />
+        </label>
+        <button style={primaryButton}>메모 저장</button>
+      </form>
       <div style={detailActions}>
         <Link href={`/tasks/new?date=${date}`} style={primaryLink}>업무 추가</Link>
         <Link href="/classes/new" style={secondaryLink}>반 수업 추가</Link>
@@ -602,6 +616,8 @@ const dayCellLarge: CSSProperties = { minHeight: 560 };
 const mutedDayCell: CSSProperties = { background: "#f8fafc", color: "#94a3b8" };
 const todayCell: CSSProperties = { boxShadow: "inset 0 0 0 2px #2563eb" };
 const dayHeader: CSSProperties = { display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12 };
+const dayHeaderRight: CSSProperties = { display: "inline-flex", alignItems: "center", gap: 4 };
+const memoDot: CSSProperties = { width: 7, height: 7, borderRadius: 999, background: "#f59e0b", display: "inline-block" };
 const eventList: CSSProperties = { display: "grid", gap: 5, alignContent: "start" };
 const eventPill: CSSProperties = {
   border: 0,
@@ -626,4 +642,8 @@ const description: CSSProperties = { margin: 0, color: "#4b5563", fontSize: 13, 
 const detailActions: CSSProperties = { display: "flex", gap: 8, flexWrap: "wrap" };
 const primaryLink: CSSProperties = { border: "1px solid #111827", background: "#111827", color: "#fff", borderRadius: 7, padding: "8px 10px", textDecoration: "none", fontSize: 12, fontWeight: 950 };
 const secondaryLink: CSSProperties = { ...primaryLink, borderColor: "#d1d5db", background: "#fff", color: "#111827" };
+const primaryButton: CSSProperties = { border: "1px solid #111827", background: "#111827", color: "#fff", borderRadius: 7, padding: "8px 10px", fontSize: 12, fontWeight: 950 };
+const memoForm: CSSProperties = { display: "grid", gap: 8 };
+const memoLabel: CSSProperties = { display: "grid", gap: 6, fontSize: 13, fontWeight: 950 };
+const memoTextarea: CSSProperties = { width: "100%", border: "1px solid #d1d5db", borderRadius: 7, padding: 9, resize: "vertical", font: "inherit", color: "#111827" };
 const badge: CSSProperties = { display: "inline-flex", alignItems: "center", borderRadius: 999, background: "#f1f5f9", color: "#475569", padding: "4px 8px", fontSize: 12, fontWeight: 950 };

@@ -3,6 +3,7 @@ import type { CSSProperties, ReactNode } from "react";
 import OmrCloseButton from "@/components/OmrCloseButton";
 import OmrExamDeleteButton from "@/components/OmrExamDeleteButton";
 import OmrMultiUploadForm from "@/components/OmrMultiUploadForm";
+import OmrReviewPreview from "@/components/OmrReviewPreview";
 import OmrUploadDeleteButton from "@/components/OmrUploadDeleteButton";
 import { requireUser } from "@/lib/auth";
 import { todayKoreaDate } from "@/lib/date";
@@ -18,6 +19,7 @@ import {
   gradeSelectedOmrUploadsAction,
   recognizeSelectedOmrUploadsAction,
   saveAnswerKeyAction,
+  saveOmrCorrectionsAction,
   updateOmrUploadMatchAction,
   updateOmrUploadSetupAction,
 } from "./actions";
@@ -388,6 +390,7 @@ export default async function OmrPage({ searchParams }: Props) {
         <RightSheet title="OMR 결과 검수" closeHref={closeUploadHref} wide>
           <UploadReview
             upload={selectedUpload}
+            reviewUploads={selectedExam?.uploads ?? []}
             template={selectedTemplate}
             keyByNo={keyByNo}
             recognizedByNo={recognizedByNo}
@@ -548,6 +551,7 @@ function ExamDetail({
 
 function UploadReview({
   upload,
+  reviewUploads,
   template,
   keyByNo,
   recognizedByNo,
@@ -557,6 +561,7 @@ function UploadReview({
   exams,
 }: {
   upload: SelectedUpload;
+  reviewUploads: ExamUploadLite[];
   template: ReturnType<typeof getOmrTemplate>;
   keyByNo: Map<number, { answer: string; score: number }>;
   recognizedByNo: Map<number, RecognizedAnswerLite>;
@@ -565,95 +570,193 @@ function UploadReview({
   students: StudentOption[];
   exams: Array<{ id: string; title: string }>;
 }) {
+  const questions = template.questions.slice(0, upload.exam?.questionCount ?? template.questionCount);
+  const lowConfidenceQuestions = questions
+    .map((question) => ({ question, recognized: recognizedByNo.get(question.no) }))
+    .filter(({ recognized }) =>
+      (recognized?.confidence ?? 1) <= 0.5 ||
+      recognized?.status === OmrAnswerStatus.REVIEW_NEEDED ||
+      recognized?.status === OmrAnswerStatus.MULTIPLE
+    );
+  const examId = upload.examId ?? upload.exam?.id ?? "";
+  const currentIndex = reviewUploads.findIndex((item) => item.id === upload.id);
+  const previousUpload = currentIndex > 0 ? reviewUploads[currentIndex - 1] : null;
+  const nextUpload = currentIndex >= 0 && currentIndex < reviewUploads.length - 1 ? reviewUploads[currentIndex + 1] : null;
+
   return (
-    <div style={reviewGrid}>
-      <section style={card}>
+    <div style={studentReviewGrid}>
+      <aside style={reviewStudentPane}>
+        <div style={sectionHead}>
+          <h3 style={smallTitle}>학생 리스트</h3>
+          <span style={muted}>{reviewUploads.length}명</span>
+        </div>
+        <div style={studentNavButtons}>
+          {previousUpload ? (
+            <Link href={reviewUploadHref(examId, previousUpload.id)} style={secondaryButton}>이전</Link>
+          ) : (
+            <span style={disabledNav}>이전</span>
+          )}
+          {nextUpload ? (
+            <Link href={reviewUploadHref(examId, nextUpload.id)} style={secondaryButton}>다음</Link>
+          ) : (
+            <span style={disabledNav}>다음</span>
+          )}
+        </div>
+        <div style={reviewStudentList}>
+          {reviewUploads.map((item) => (
+            <ReviewStudentItem key={item.id} upload={item} selected={item.id === upload.id} examId={examId} />
+          ))}
+        </div>
+      </aside>
+
+      <section style={reviewPreviewPane}>
         <div style={sectionHead}>
           <div>
-            <h2 style={sectionTitle}>{upload.fileName}</h2>
-            <p style={muted}>{upload.student?.name ?? "매칭된 학생 없음"} / {template.label}</p>
+            <h2 style={sectionTitle}>{upload.student?.name ?? "매칭된 학생 없음"}</h2>
+            <p style={muted}>{formatPhoneLast8(upload.phoneLast8)} / {upload.fileName}</p>
           </div>
           <StatusBadge tone={recognizeTone(upload.recognizeStatus)}>{recognizeStatusText(upload.recognizeStatus)}</StatusBadge>
         </div>
-        <FilePreview filePath={upload.previewImagePath ?? upload.filePath} fileType={upload.previewImagePath ? "image/png" : upload.fileType} />
+        <OmrReviewPreview
+          filePath={upload.previewImagePath ?? upload.filePath}
+          fileType={upload.previewImagePath ? "image/png" : upload.fileType}
+          fileName={upload.fileName}
+        />
       </section>
 
-      <section style={card}>
-        <h3 style={smallTitle}>학생 매칭</h3>
-        <p style={muted}>
-          인식 전화번호: <b>{formatPhoneLast8(upload.phoneLast8)}</b> / {phoneRecognizeStatusText(upload.phoneRecognizeStatus)} / {matchStatusText(upload.matchStatus)}
-        </p>
-        <form action={updateOmrUploadMatchAction} style={stack}>
-          <input type="hidden" name="uploadId" value={upload.id} />
-          <input name="phoneLast8" defaultValue={upload.phoneLast8 ?? ""} placeholder="전화번호 뒤 8자리" style={input} />
-          <select name="studentId" defaultValue={upload.student?.id ?? ""} style={input}>
-            <option value="">학생 선택</option>
-            {students.map((student) => (
-              <option key={student.id} value={student.id}>{studentLabel(student)}</option>
-            ))}
-          </select>
-          <button style={secondaryButton}>매칭 저장</button>
-        </form>
-        <div style={divider} />
-        <form action={updateOmrUploadSetupAction} style={stack}>
-          <input type="hidden" name="uploadId" value={upload.id} />
-          <select name="examId" defaultValue={upload.examId ?? ""} style={input}>
-            {exams.map((exam) => <option key={exam.id} value={exam.id}>{exam.title}</option>)}
-          </select>
-          <select name="templateType" defaultValue={upload.templateType} style={input}>
-            {omrTemplateList.map((templateOption) => (
-              <option key={templateOption.type} value={templateOption.type}>{templateOption.label}</option>
-            ))}
-          </select>
-          <button style={secondaryButton}>설정 저장</button>
-        </form>
-      </section>
-
-      <section style={{ ...card, gridColumn: "1 / -1" }}>
-        <div style={sectionHead}>
-          <div>
-            <h3 style={sectionTitle}>답안 검수 및 채점</h3>
-            <p style={muted}>인식에 실패해도 답안을 직접 입력해서 채점하고 저장할 수 있습니다.</p>
+      <section style={reviewAnswerPane}>
+        <section style={compactPanel}>
+          <div style={sectionHead}>
+            <h3 style={smallTitle}>신뢰도 낮은 문항</h3>
+            {latestResult && <StatusBadge tone="green">{latestResult.totalScore}/{latestResult.maxScore || upload.exam?.questionCount || template.questionCount}</StatusBadge>}
           </div>
-          {latestResult && <StatusBadge tone="green">{latestResult.totalScore}/{latestResult.maxScore || upload.exam?.questionCount || template.questionCount}</StatusBadge>}
-        </div>
-        <form action={gradeOmrAction} style={stack}>
+          {lowConfidenceQuestions.length > 0 ? (
+            <div style={lowQuestionList}>
+              {lowConfidenceQuestions.map(({ question, recognized }) => (
+                <a key={question.no} href={`#omr-question-${question.no}`} style={lowQuestionItem}>
+                  <b>{question.no}번</b>
+                  <span>자동 {recognized?.recognizedAnswer || "-"}</span>
+                  <span>{formatConfidence(recognized?.confidence)}</span>
+                  <StatusBadge tone="yellow">{answerStatusText(recognized?.status)}</StatusBadge>
+                </a>
+              ))}
+            </div>
+          ) : (
+            <div style={emptyBox}>확인 필요 문항 없음</div>
+          )}
+        </section>
+
+        <section style={compactPanel}>
+          <h3 style={smallTitle}>학생 매칭 / 검사 설정</h3>
+          <p style={muted}>
+            인식 전화번호: <b>{formatPhoneLast8(upload.phoneLast8)}</b> / {phoneRecognizeStatusText(upload.phoneRecognizeStatus)} / {matchStatusText(upload.matchStatus)}
+          </p>
+          <div style={reviewInlineForms}>
+            <form action={updateOmrUploadMatchAction} style={reviewInlineForm}>
+              <input type="hidden" name="uploadId" value={upload.id} />
+              <input name="phoneLast8" defaultValue={upload.phoneLast8 ?? ""} placeholder="전화번호 뒤 8자리" style={miniInput} />
+              <select name="studentId" defaultValue={upload.student?.id ?? ""} style={miniInput}>
+                <option value="">학생 선택</option>
+                {students.map((student) => (
+                  <option key={student.id} value={student.id}>{studentLabel(student)}</option>
+                ))}
+              </select>
+              <button style={secondaryButton}>매칭 저장</button>
+            </form>
+            <form action={updateOmrUploadSetupAction} style={reviewInlineForm}>
+              <input type="hidden" name="uploadId" value={upload.id} />
+              <select name="examId" defaultValue={upload.examId ?? ""} style={miniInput}>
+                {exams.map((exam) => <option key={exam.id} value={exam.id}>{exam.title}</option>)}
+              </select>
+              <select name="templateType" defaultValue={upload.templateType} style={miniInput}>
+                {omrTemplateList.map((templateOption) => (
+                  <option key={templateOption.type} value={templateOption.type}>{templateOption.label}</option>
+                ))}
+              </select>
+              <button style={secondaryButton}>설정 저장</button>
+            </form>
+          </div>
+        </section>
+
+        <form action={gradeOmrAction} style={answerReviewForm}>
           <input type="hidden" name="uploadId" value={upload.id} />
-          <div style={tableWrap}>
+          <div style={sectionHead}>
+            <div>
+              <h3 style={smallTitle}>답안 / 정답 비교표</h3>
+              <p style={muted}>수정 답을 바꾼 뒤 재채점하면 최종 답과 정오 여부가 갱신됩니다.</p>
+            </div>
+          </div>
+          <div style={reviewTableWrap}>
             <table style={table}>
               <thead>
                 <tr>
                   <Th>번호</Th>
-                  <Th>영역</Th>
-                  <Th>자동 인식</Th>
+                  <Th>학생 답</Th>
+                  <Th>자동</Th>
                   <Th>수정 답</Th>
                   <Th>최종 답</Th>
                   <Th>정답</Th>
+                  <Th>O/X</Th>
                   <Th>신뢰도</Th>
                   <Th>상태</Th>
-                  <Th>정오 여부</Th>
-                  <Th>배점</Th>
                 </tr>
               </thead>
               <tbody>
-                {template.questions.slice(0, upload.exam?.questionCount ?? template.questionCount).map((question) => (
+                {questions.map((question) => (
                   <QuestionRow
                     key={question.no}
                     question={question}
                     recognized={recognizedByNo.get(question.no)}
                     answerKey={keyByNo.get(question.no)}
                     resultItem={resultItemByNo.get(question.no)}
+                    compact
                   />
                 ))}
               </tbody>
             </table>
           </div>
-          <button style={primaryButton} disabled={!upload.student}>채점 후 학생 성적에 저장</button>
+          <div style={reviewFooter}>
+            <button formAction={saveOmrCorrectionsAction} style={secondaryButton} disabled={!upload.exam}>수정 저장</button>
+            <button style={primaryButton} disabled={!upload.student}>재채점</button>
+            <button style={primaryButton} disabled={!upload.student || !latestResult}>학생 성적에 등록</button>
+            <Link href={closeUploadHrefFor(upload)} style={lightButton}>닫기</Link>
+          </div>
           {!upload.student && <p style={dangerText}>성적을 저장하려면 학생 매칭이 필요합니다.</p>}
         </form>
       </section>
     </div>
   );
+}
+
+function ReviewStudentItem({ upload, selected, examId }: { upload: ExamUploadLite; selected: boolean; examId: string }) {
+  const result = upload.results[0];
+  const needsReview =
+    upload.recognizeStatus === "REVIEW_NEEDED" ||
+    upload.recognizeStatus === "FAILED" ||
+    upload.recognizedAnswers.some((answer) => answer.status === OmrAnswerStatus.REVIEW_NEEDED || answer.status === OmrAnswerStatus.MULTIPLE);
+
+  return (
+    <Link
+      href={reviewUploadHref(examId, upload.id)}
+      style={{ ...reviewStudentItem, ...(selected ? reviewStudentSelected : {}), ...(needsReview ? reviewStudentNeedsReview : {}) }}
+    >
+      <div style={reviewStudentName}>{upload.student?.name ?? "학생 매칭 필요"}</div>
+      <div style={reviewStudentMeta}>{formatPhoneLast8(upload.phoneLast8)} / {result ? `${result.totalScore}점` : "미채점"}</div>
+      <div style={reviewStudentMeta}>{needsReview ? "검수 필요" : recognizeStatusText(upload.recognizeStatus)}</div>
+    </Link>
+  );
+}
+
+function reviewUploadHref(examId: string, uploadId: string) {
+  return `/omr?examId=${examId}&mode=results&uploadId=${uploadId}`;
+}
+
+function closeUploadHrefFor(upload: Pick<SelectedUpload, "examId">) {
+  return upload.examId ? `/omr?examId=${upload.examId}&mode=results` : "/omr";
+}
+
+function answerStatusText(status?: OmrAnswerStatus | null) {
+  return answerStatusOptions.find(([value]) => value === status)?.[1] ?? "확인 필요";
 }
 
 function MatchMiniForm({ upload, students }: { upload: Pick<ExamUploadLite, "id" | "phoneLast8" | "student">; students: StudentOption[] }) {
@@ -697,19 +800,56 @@ function QuestionRow({
   recognized,
   answerKey,
   resultItem,
+  compact = false,
 }: {
   question: OmrTemplateQuestion;
   recognized?: { recognizedAnswer: string | null; correctedAnswer: string | null; finalAnswer?: string | null; status: OmrAnswerStatus; confidence: number | null };
   answerKey?: { answer: string; score: number };
   resultItem?: { status: ExamResultStatus; studentAnswer: string | null; correctAnswer: string | null; score: number };
+  compact?: boolean;
 }) {
   const studentAnswer = resultItem?.studentAnswer ?? recognized?.finalAnswer ?? recognized?.correctedAnswer ?? recognized?.recognizedAnswer ?? "";
   const finalAnswer = recognized?.finalAnswer ?? recognized?.correctedAnswer ?? recognized?.recognizedAnswer ?? "";
   const correctAnswer = resultItem?.correctAnswer ?? answerKey?.answer ?? "";
   const status = recognized?.status ?? (studentAnswer ? OmrAnswerStatus.MANUAL : OmrAnswerStatus.BLANK);
+  const ox = resultItem
+    ? resultItem.status === ExamResultStatus.CORRECT
+      ? "O"
+      : resultItem.status === ExamResultStatus.WRONG
+        ? "X"
+        : resultStatusText(resultItem.status)
+    : studentAnswer && correctAnswer
+      ? studentAnswer === correctAnswer
+        ? "O"
+        : "X"
+      : "-";
+  const rowStyle = resultItem ? resultRowStyle(resultItem.status) : status === OmrAnswerStatus.REVIEW_NEEDED || status === OmrAnswerStatus.MULTIPLE ? reviewRow : undefined;
+
+  if (compact) {
+    return (
+      <tr id={`omr-question-${question.no}`} style={rowStyle}>
+        <Td>{question.no}</Td>
+        <Td>{studentAnswer || "-"}</Td>
+        <Td>{recognized?.recognizedAnswer || "-"}</Td>
+        <Td><AnswerInput name={`student-${question.no}`} question={question} defaultValue={studentAnswer} /></Td>
+        <Td>{finalAnswer || studentAnswer || "-"}</Td>
+        <Td><AnswerInput name={`correct-${question.no}`} question={question} defaultValue={correctAnswer} /></Td>
+        <Td><span style={ox === "O" ? correctPill : ox === "X" ? wrongPill : badge}>{ox}</span></Td>
+        <Td>{formatConfidence(recognized?.confidence)}</Td>
+        <Td>
+          <select name={`status-${question.no}`} defaultValue={status} style={miniInput}>
+            {answerStatusOptions.map(([value, label]) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+          </select>
+          <input name={`score-${question.no}`} type="hidden" value={answerKey?.score ?? resultItem?.score ?? 1} />
+        </Td>
+      </tr>
+    );
+  }
 
   return (
-    <tr style={resultItem ? resultRowStyle(resultItem.status) : status === OmrAnswerStatus.REVIEW_NEEDED || status === OmrAnswerStatus.MULTIPLE ? reviewRow : undefined}>
+    <tr id={`omr-question-${question.no}`} style={rowStyle}>
       <Td>{question.no}</Td>
       <Td>{question.section}</Td>
       <Td>{recognized?.recognizedAnswer || "-"}</Td>
@@ -752,22 +892,6 @@ function RightSheet({ title, closeHref, wide = false, children }: { title: strin
       </aside>
     </div>
   );
-}
-
-function FilePreview({ filePath, fileType }: { filePath: string | null; fileType: string | null }) {
-  if (!filePath) return <div style={emptyBox}>미리보기 파일이 없습니다.</div>;
-  if (fileType?.startsWith("image/")) {
-    // eslint-disable-next-line @next/next/no-img-element
-    return <img src={filePath} alt="OMR preview" style={imagePreview} />;
-  }
-  if (fileType === "application/pdf" || filePath.toLowerCase().endsWith(".pdf")) {
-    return (
-      <object data={filePath} type="application/pdf" style={pdfPreview}>
-        <a href={filePath} target="_blank" rel="noreferrer">PDF 열기</a>
-      </object>
-    );
-  }
-  return <a href={filePath} target="_blank" rel="noreferrer" style={resultButton}>파일 열기</a>;
 }
 
 function MiniStat({ label, value }: { label: string; value: string }) {
@@ -1035,16 +1159,35 @@ const tinyButton: CSSProperties = { ...smallButton, padding: "6px 8px", fontSize
 const dangerText: CSSProperties = { color: "#b91c1c", fontWeight: 800 };
 const sheetBackdrop: CSSProperties = { position: "fixed", inset: 0, zIndex: 40, background: "rgba(15,23,42,.28)", display: "flex", justifyContent: "flex-end" };
 const sheet: CSSProperties = { width: 440, maxWidth: "94vw", height: "100vh", background: "#fff", boxShadow: "-18px 0 40px rgba(15,23,42,.18)", padding: 16, overflow: "auto" };
-const wideSheet: CSSProperties = { width: 1180 };
+const wideSheet: CSSProperties = { width: "min(1500px, 96vw)" };
 const sheetHeader: CSSProperties = { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, position: "sticky", top: 0, zIndex: 2, background: "#fff", paddingBottom: 12, borderBottom: "1px solid #e5e7eb", marginBottom: 14 };
 const sheetSection: CSSProperties = { border: "1px solid #e5e7eb", borderRadius: 10, padding: 12, marginBottom: 12 };
 const sheetTitle: CSSProperties = { margin: "0 0 10px", fontSize: 16, fontWeight: 950 };
 const stack: CSSProperties = { display: "grid", gap: 9 };
 const input: CSSProperties = { width: "100%", boxSizing: "border-box", border: "1px solid #d1d5db", borderRadius: 7, padding: "9px 10px", minWidth: 0 };
 const twoCols: CSSProperties = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 };
-const reviewGrid: CSSProperties = { display: "grid", gridTemplateColumns: "minmax(300px, .9fr) minmax(300px, .7fr)", gap: 12 };
-const imagePreview: CSSProperties = { width: "100%", maxHeight: 520, objectFit: "contain", border: "1px solid #e5e7eb", borderRadius: 8, background: "#f9fafb" };
-const pdfPreview: CSSProperties = { width: "100%", height: 520, border: "1px solid #e5e7eb", borderRadius: 8, background: "#f9fafb" };
+const studentReviewGrid: CSSProperties = { display: "grid", gridTemplateColumns: "250px minmax(420px, 1fr) minmax(540px, 1fr)", gap: 12, alignItems: "stretch", minHeight: "calc(100vh - 100px)" };
+const reviewStudentPane: CSSProperties = { ...card, display: "grid", gridTemplateRows: "auto auto 1fr", minHeight: 0 };
+const reviewPreviewPane: CSSProperties = { ...card, minWidth: 0, minHeight: 0 };
+const reviewAnswerPane: CSSProperties = { display: "grid", gridTemplateRows: "auto auto 1fr", gap: 10, minWidth: 0, minHeight: 0 };
+const studentNavButtons: CSSProperties = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 8 };
+const disabledNav: CSSProperties = { ...secondaryButton, opacity: .45, textAlign: "center", cursor: "default" };
+const reviewStudentList: CSSProperties = { display: "grid", gap: 6, overflow: "auto", paddingRight: 2 };
+const reviewStudentItem: CSSProperties = { border: "1px solid #e5e7eb", borderRadius: 8, padding: 9, textDecoration: "none", color: "#111827", background: "#fff", display: "grid", gap: 3 };
+const reviewStudentSelected: CSSProperties = { borderColor: "#2563eb", boxShadow: "inset 3px 0 0 #2563eb", background: "#eff6ff" };
+const reviewStudentNeedsReview: CSSProperties = { background: "#fffbeb" };
+const reviewStudentName: CSSProperties = { fontSize: 13, fontWeight: 950 };
+const reviewStudentMeta: CSSProperties = { fontSize: 12, color: "#6b7280", fontWeight: 800 };
+const compactPanel: CSSProperties = { ...card, padding: 10 };
+const lowQuestionList: CSSProperties = { display: "flex", flexWrap: "wrap", gap: 6, maxHeight: 96, overflow: "auto" };
+const lowQuestionItem: CSSProperties = { display: "inline-flex", alignItems: "center", gap: 6, border: "1px solid #fde68a", borderRadius: 999, background: "#fffbeb", color: "#92400e", padding: "5px 8px", textDecoration: "none", fontSize: 12, fontWeight: 900 };
+const reviewInlineForms: CSSProperties = { display: "grid", gap: 6, marginTop: 8 };
+const reviewInlineForm: CSSProperties = { display: "grid", gridTemplateColumns: "1fr 1.2fr auto", gap: 6, alignItems: "center" };
+const answerReviewForm: CSSProperties = { ...card, display: "grid", gap: 8, minHeight: 0 };
+const reviewTableWrap: CSSProperties = { ...tableWrap, maxHeight: "calc(100vh - 420px)", minHeight: 300 };
+const reviewFooter: CSSProperties = { display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: 8, alignItems: "center" };
+const correctPill: CSSProperties = { ...badge, background: "#dcfce7", color: "#047857" };
+const wrongPill: CSSProperties = { ...badge, background: "#fee2e2", color: "#b91c1c" };
 const emptyBox: CSSProperties = { border: "1px dashed #d1d5db", borderRadius: 8, padding: 28, textAlign: "center", color: "#6b7280" };
 const divider: CSSProperties = { height: 1, background: "#e5e7eb", margin: "10px 0" };
 const smallTitle: CSSProperties = { margin: "0 0 10px", fontSize: 15, fontWeight: 950 };

@@ -43,6 +43,9 @@ export type StudentSheetRow = {
   assignmentScore: number | null;
   score: number | null;
   maxScore: number;
+  attendanceByDate?: Record<string, string>;
+  assignmentByDate?: Record<string, string>;
+  scoreByDate?: Record<string, string>;
   customValues: Record<string, string>;
 };
 
@@ -326,13 +329,6 @@ function enabledOptions(options: SheetOption[]) {
   return enabled.length > 0 ? enabled : options;
 }
 
-function optionsWithCurrent(visibleOptions: SheetOption[], allOptions: SheetOption[], value: string) {
-  if (!value || visibleOptions.some((option) => option.value === value)) return visibleOptions;
-
-  const current = allOptions.find((option) => option.value === value);
-  return current ? [...visibleOptions, current] : [...visibleOptions, { value, label: value, enabled: true }];
-}
-
 function createCustomOption(options: SheetOption[]) {
   let index = options.length + 1;
   let value = `CUSTOM_${Date.now().toString(36).toUpperCase()}_${index}`;
@@ -467,8 +463,8 @@ export default function StudentSheetMatrix({
   const [assignmentDraftOptions, setAssignmentDraftOptions] = useState<SheetOption[]>(() => assignmentOptions);
   const visibleAttendanceOptions = useMemo(() => enabledOptions(attendanceDraftOptions), [attendanceDraftOptions]);
   const visibleAssignmentOptions = useMemo(() => enabledOptions(assignmentDraftOptions), [assignmentDraftOptions]);
-  const [bulkAttendanceStatus, setBulkAttendanceStatus] = useState(() => enabledOptions(attendanceOptions)[0]?.value ?? "PRESENT");
-  const [bulkAssignmentStatus, setBulkAssignmentStatus] = useState(() => enabledOptions(assignmentOptions)[0]?.value ?? "DONE");
+  const [bulkAttendanceStatus, setBulkAttendanceStatus] = useState(() => enabledOptions(attendanceOptions)[0]?.label ?? "출석");
+  const [bulkAssignmentStatus, setBulkAssignmentStatus] = useState(() => enabledOptions(assignmentOptions)[0]?.label ?? "제출");
   const [bulkClassGroupId, setBulkClassGroupId] = useState("");
   const [bulkAssistantId, setBulkAssistantId] = useState("");
   const [addPanelOpen, setAddPanelOpen] = useState(false);
@@ -936,6 +932,7 @@ export default function StudentSheetMatrix({
 
   return (
     <div style={isFullscreen ? fullscreenShell : matrixShell}>
+
       <div style={bulkBar}>
         <div style={sheetMeta}>
           <b>{date}</b>
@@ -944,7 +941,7 @@ export default function StudentSheetMatrix({
         </div>
 
         <div style={sheetModeTabs}>
-          {(["all", "attendance", "assignment", "score"] as const).map((tabMode) => (
+          {(["all", "lesson", "attendance", "assignment", "score"] as const).map((tabMode) => (
             <Link
               key={tabMode}
               href={`/students?tab=${tabMode}${preservedQuery ? `&${preservedQuery}` : ""}`}
@@ -1102,37 +1099,27 @@ export default function StudentSheetMatrix({
         <div style={selectionActionBar}>
           <b>{selectedIds.length}명 선택</b>
           <div style={bulkGroup}>
-            <select
+            <input
               value={bulkAttendanceStatus}
               onChange={(event) => setBulkAttendanceStatus(event.target.value)}
+              autoComplete="off"
               style={bulkSelect}
               disabled={isPending}
               aria-label="선택 학생 출석 변경"
-            >
-              {visibleAttendanceOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
+            />
             <button type="button" onClick={applyBulkAttendance} disabled={isPending} style={bulkButton}>
               출석 변경
             </button>
           </div>
           <div style={bulkGroup}>
-            <select
+            <input
               value={bulkAssignmentStatus}
               onChange={(event) => setBulkAssignmentStatus(event.target.value)}
+              autoComplete="off"
               style={bulkSelect}
               disabled={isPending}
               aria-label="선택 학생 과제 변경"
-            >
-              {visibleAssignmentOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
+            />
             <button type="button" onClick={applyBulkAssignment} disabled={isPending} style={bulkButton}>
               과제 변경
             </button>
@@ -1597,44 +1584,32 @@ export default function StudentSheetMatrix({
 
     if (column === "attendance") {
       return renderEditableTd(rowIndex, column, row.attendance, (
-          <select
+          <input
             value={row.attendance}
-            onChange={(event) => saveAttendance(row, event.target.value)}
+            onChange={(event) => updateDraftRow(row.id, { attendance: event.target.value })}
+            autoComplete="off"
+            onBlur={(event) => saveAttendance(row, event.currentTarget.value)}
             onKeyDown={(event) => onEditorKeyDown(event, rowIndex, column)}
-            onClick={(event) => event.stopPropagation()}
-            onMouseDown={(event) => event.stopPropagation()}
-            style={cellSelect}
+            style={cellInput}
             disabled={isPending}
             aria-label={`${row.name} 출석`}
-          >
-            {optionsWithCurrent(visibleAttendanceOptions, attendanceDraftOptions, row.attendance).map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
+          />
         )
       );
     }
 
     if (column === "assignment") {
       return renderEditableTd(rowIndex, column, row.assignment, (
-          <select
+          <input
             value={row.assignment}
-            onChange={(event) => saveAssignment(row, event.target.value)}
+            onChange={(event) => updateDraftRow(row.id, { assignment: event.target.value })}
+            autoComplete="off"
+            onBlur={(event) => saveAssignment(row, event.currentTarget.value)}
             onKeyDown={(event) => onEditorKeyDown(event, rowIndex, column)}
-            onClick={(event) => event.stopPropagation()}
-            onMouseDown={(event) => event.stopPropagation()}
-            style={cellSelect}
+            style={cellInput}
             disabled={isPending}
             aria-label={`${row.name} 과제`}
-          >
-            {optionsWithCurrent(visibleAssignmentOptions, assignmentDraftOptions, row.assignment).map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
+          />
         )
       );
     }
@@ -1802,6 +1777,7 @@ function isCursorAtEnd(target: SheetEditorElement) {
 }
 
 function modeLabel(mode: string) {
+  if (mode === "lesson") return "차시표";
   if (mode === "attendance") return "출석";
   if (mode === "assignment") return "과제";
   if (mode === "score") return "성적";
@@ -1809,10 +1785,12 @@ function modeLabel(mode: string) {
 }
 
 function editCellStyle(isSelected: boolean, status?: string, isRowSelected = false): CSSProperties {
+  const positiveStatuses = new Set(["DONE", "PRESENT", "완료", "제출", "출석", "현장"]);
+  const neutralStatuses = new Set(["UNCHECKED", "미확인"]);
   const statusFill =
-    status === "DONE" || status === "PRESENT"
+    status && positiveStatuses.has(status)
       ? { background: "#f0fdf4" }
-      : status === "UNCHECKED"
+      : status && neutralStatuses.has(status)
         ? { background: "#fff" }
         : status
           ? { background: "#fff7cc" }

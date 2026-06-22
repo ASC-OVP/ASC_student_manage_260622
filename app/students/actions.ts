@@ -74,7 +74,8 @@ function enumValue<T extends string>(value: string, values: readonly T[], fallba
 
 function sheetStatusValue(value: string, fallback: string) {
   if (!value) return fallback;
-  return /^[A-Za-z0-9_-]{1,48}$/.test(value) ? value : fallback;
+  const cleaned = value.trim().slice(0, 48);
+  return cleaned || fallback;
 }
 
 function detailStatusValue(value: string, fallback: string) {
@@ -1189,6 +1190,189 @@ export async function updateStudentSheetCustomCell(formData: FormData) {
   revalidatePath(`/students/${studentId}`);
 }
 
+export async function updateStudentSheetCustomCells(formData: FormData) {
+  const user = await requireUser();
+  const rawCells = text(formData, "cells");
+
+  let parsed: unknown = null;
+  try {
+    parsed = rawCells ? JSON.parse(rawCells) : null;
+  } catch {
+    parsed = null;
+  }
+
+  if (!Array.isArray(parsed)) {
+    throw new Error("저장할 셀 정보를 확인해 주세요.");
+  }
+
+  const cells = parsed
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+      const raw = item as { studentId?: unknown; columnId?: unknown; value?: unknown };
+      const studentId = String(raw.studentId ?? "").trim();
+      const columnId = normalizeCustomColumnId(raw.columnId);
+      const value = String(raw.value ?? "").slice(0, 500);
+      return studentId && columnId ? { studentId, columnId, value } : null;
+    })
+    .filter((cell): cell is { studentId: string; columnId: string; value: string } => Boolean(cell));
+
+  if (cells.length === 0) {
+    throw new Error("저장할 셀이 없습니다.");
+  }
+
+  const studentIds = Array.from(new Set(cells.map((cell) => cell.studentId)));
+  const students = await prisma.student.findMany({
+    where: { id: { in: studentIds }, academyId: user.academyId },
+    select: { id: true },
+  });
+  const allowedStudentIds = new Set(students.map((student) => student.id));
+  const allowedCells = cells.filter((cell) => allowedStudentIds.has(cell.studentId));
+
+  if (allowedCells.length === 0) {
+    throw new Error("저장할 학생 정보를 확인해 주세요.");
+  }
+
+  const rows = await prisma.$queryRaw<Array<{ value: string }>>`
+    SELECT value
+    FROM AcademySetting
+    WHERE academyId = ${user.academyId}
+      AND key = ${studentSheetCustomSettingKeys.values}
+    LIMIT 1
+  `;
+  const current = rows[0]?.value;
+  let currentParsed: unknown = null;
+
+  try {
+    currentParsed = current ? JSON.parse(current) : null;
+  } catch {
+    currentParsed = null;
+  }
+
+  const values = normalizeCustomCellValues(currentParsed);
+  for (const cell of allowedCells) {
+    values[cell.studentId] = { ...(values[cell.studentId] ?? {}), [cell.columnId]: cell.value };
+  }
+  const nextValue = JSON.stringify(values);
+
+  await prisma.$executeRaw`
+    INSERT INTO AcademySetting (id, academyId, key, value, createdAt, updatedAt)
+    VALUES (${randomUUID()}, ${user.academyId}, ${studentSheetCustomSettingKeys.values}, ${nextValue}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    ON CONFLICT(academyId, key) DO UPDATE SET
+      value = excluded.value,
+      updatedAt = CURRENT_TIMESTAMP
+  `;
+
+  await recordActivity({
+    actor: user,
+    action: "BULK_UPDATE",
+    entityType: "Student",
+    summary: `차시표 셀 저장: ${allowedCells.length}칸`,
+    metadata: { count: allowedCells.length, studentIds },
+  });
+
+  revalidatePath("/students");
+}
+
+export async function updateStudentLessonCells(formData: FormData) {
+  const user = await requireUser();
+  const rawCells = text(formData, "cells");
+
+  let parsed: unknown = null;
+  try {
+    parsed = rawCells ? JSON.parse(rawCells) : null;
+  } catch {
+    parsed = null;
+  }
+
+  if (!Array.isArray(parsed)) {
+    throw new Error("저장할 차시 셀 정보를 확인해 주세요.");
+  }
+
+  const cells = parsed
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+      const raw = item as { studentId?: unknown; date?: unknown; field?: unknown; value?: unknown };
+      const studentId = String(raw.studentId ?? "").trim();
+      const date = String(raw.date ?? "").trim();
+      const field = String(raw.field ?? "").trim();
+      const value = String(raw.value ?? "").trim().slice(0, 500);
+      if (!studentId || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+      if (!["attendance", "assignment", "test"].includes(field)) return null;
+      return { studentId, date, field, value };
+    })
+    .filter((cell): cell is { studentId: string; date: string; field: string; value: string } => Boolean(cell));
+
+  if (cells.length === 0) {
+    throw new Error("저장할 차시 셀이 없습니다.");
+  }
+
+  const studentIds = Array.from(new Set(cells.map((cell) => cell.studentId)));
+  const students = await prisma.student.findMany({
+    where: { id: { in: studentIds }, academyId: user.academyId },
+    select: { id: true },
+  });
+  const allowedStudentIds = new Set(students.map((student) => student.id));
+  const allowedCells = cells.filter((cell) => allowedStudentIds.has(cell.studentId));
+
+  if (allowedCells.length === 0) {
+    throw new Error("저장할 학생 정보를 확인해 주세요.");
+  }
+
+  await prisma.$transaction(async (tx) => {
+    for (const cell of allowedCells) {
+      if (cell.field === "attendance") {
+        if (!cell.value) {
+          await tx.attendanceRecord.deleteMany({ where: { studentId: cell.studentId, date: cell.date } });
+        } else {
+          await tx.attendanceRecord.upsert({
+            where: { studentId_date: { studentId: cell.studentId, date: cell.date } },
+            update: { status: cell.value },
+            create: { academyId: user.academyId, studentId: cell.studentId, date: cell.date, status: cell.value },
+          });
+        }
+      }
+
+      if (cell.field === "assignment") {
+        if (!cell.value) {
+          await tx.assignmentRecord.deleteMany({ where: { studentId: cell.studentId, date: cell.date, title: "과제" } });
+        } else {
+          await tx.assignmentRecord.upsert({
+            where: { studentId_date_title: { studentId: cell.studentId, date: cell.date, title: "과제" } },
+            update: { status: cell.value },
+            create: { academyId: user.academyId, studentId: cell.studentId, date: cell.date, title: "과제", status: cell.value },
+          });
+        }
+      }
+
+      if (cell.field === "test") {
+        if (!cell.value) {
+          await tx.scoreRecord.deleteMany({ where: { studentId: cell.studentId, date: cell.date, title: "테스트" } });
+        } else {
+          const score = Number(cell.value);
+          if (Number.isNaN(score)) {
+            throw new Error("테스트 점수는 숫자로 입력해 주세요.");
+          }
+          await tx.scoreRecord.upsert({
+            where: { studentId_date_title: { studentId: cell.studentId, date: cell.date, title: "테스트" } },
+            update: { score, maxScore: 100 },
+            create: { academyId: user.academyId, studentId: cell.studentId, date: cell.date, title: "테스트", score, maxScore: 100 },
+          });
+        }
+      }
+    }
+  });
+
+  await recordActivity({
+    actor: user,
+    action: "BULK_UPDATE",
+    entityType: "Student",
+    summary: `차시표 기록 저장: ${allowedCells.length}칸`,
+    metadata: { count: allowedCells.length, studentIds },
+  });
+
+  revalidatePath("/students");
+  for (const studentId of studentIds) revalidatePath(`/students/${studentId}`);
+}
 export async function updateScore(formData: FormData) {
   const user = await requireUser();
 

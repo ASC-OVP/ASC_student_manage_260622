@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { requireUser, roleLabel, canDeactivateAccount, canManageStaff } from "@/lib/auth";
 import { createStaff, deleteStaff } from "./actions";
 import { button, card, container, desc, excelTable, excelTd, excelTh, input, page, title } from "@/lib/ui";
+import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
@@ -46,6 +47,9 @@ export default async function StaffPage() {
                   <td style={excelTd}>{member.isActive ? "활성" : "비활성"}</td>
                   <td style={excelTd}>{new Date(member.createdAt).toLocaleDateString("ko-KR")}</td>
                   <td style={excelTd}>
+                    {member.role === "ASSISTANT" && member.isActive && (
+                      <Link href={`/work?assistantId=${member.id}`} style={miniLink}>근무</Link>
+                    )}
                     {canDeactivate && member.id !== user.id && member.isActive && !(member.role === "ADMIN" && activeAdminCount <= 1) ? (
                       <form action={deleteStaff}>
                         <input type="hidden" name="userId" value={member.id}/>
@@ -63,4 +67,5 @@ export default async function StaffPage() {
   );
 }
 const label = { display: "flex", flexDirection: "column" as const, gap: 6, fontWeight: 900 };
+const miniLink = { display: "inline-block", marginRight: 8, padding: "7px 10px", borderRadius: 8, background: "#eef2ff", color: "#3730a3", fontWeight: 900, textDecoration: "none" };
 const miniDanger = { padding: "7px 10px", border: "none", borderRadius: 8, background: "#dc2626", color: "#fff", fontWeight: 900 };
