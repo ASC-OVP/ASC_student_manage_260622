@@ -4,7 +4,7 @@ import ConfirmSubmitButton from "@/components/ConfirmSubmitButton";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { CSSProperties, ReactNode } from "react";
-import { createTaskComment, deleteTaskAction, startTaskAction, submitTaskAction, updateTaskChecklistItemAction, updateTaskStatus } from "../actions";
+import { createTaskComment, deleteTaskAction, submitTaskAction, updateTaskChecklistItemAction, updateTaskStatus } from "../actions";
 
 type Props = { params: Promise<{ taskId: string }> };
 
@@ -110,32 +110,21 @@ export default async function SimpleTaskDetailPage({ params }: Props) {
           <Panel title="처리">
             {canWork ? (
               task.status === "DONE" ? (
-                <Empty>이미 완료된 업무입니다.</Empty>
-              ) : (
                 <>
-                  <div style={actionRow}>
-                    {task.status !== "IN_PROGRESS" && (
-                      <form action={startTaskAction}>
-                        <input type="hidden" name="taskId" value={task.id} />
-                        <button style={primaryButton}>진행 시작</button>
-                      </form>
-                    )}
-                    <form action={updateTaskStatus}>
-                      <input type="hidden" name="taskId" value={task.id} />
-                      <input type="hidden" name="status" value="HOLD" />
-                      <button style={smallGhost}>보류</button>
-                    </form>
-                  </div>
-                  <form action={submitTaskAction} style={submitForm}>
+                  <Empty>이미 완료된 업무입니다.</Empty>
+                  <form action={updateTaskStatus} style={submitForm}>
                     <input type="hidden" name="taskId" value={task.id} />
-                    <textarea name="content" required rows={4} placeholder="처리 내용, 남긴 증거, 미처리 사항을 적어주세요." style={textarea} />
-                    <div style={twoCols}>
-                      <input name="actualMinutes" type="number" placeholder="수행 시간(분)" style={input} />
-                      <input name="fileUrl" placeholder="첨부 파일/문서 링크" style={input} />
-                    </div>
-                    <button style={primaryButton}>완료 처리</button>
+                    <input type="hidden" name="status" value="TODO" />
+                    <input type="hidden" name="memo" value="완료 취소" />
+                    <button style={smallGhost}>완료 취소</button>
                   </form>
                 </>
+              ) : (
+                <form action={submitTaskAction} style={submitForm}>
+                  <input type="hidden" name="taskId" value={task.id} />
+                  <input type="hidden" name="content" value="완료 처리" />
+                  <button style={primaryButton}>완료</button>
+                </form>
               )
             ) : (
               <Empty>담당자만 처리할 수 있습니다.</Empty>
@@ -307,11 +296,11 @@ function formatDateTime(date: Date) {
   return new Intl.DateTimeFormat("ko-KR", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).format(date);
 }
 
-const page: CSSProperties = { padding: 24, color: "#111827", background: "#f3f4f6", minHeight: "100vh" };
-const shell: CSSProperties = { maxWidth: 1320, margin: "0 auto", display: "grid", gap: 12 };
+const page: CSSProperties = { padding: 14, color: "#111827", background: "#f3f4f6", minHeight: "100vh" };
+const shell: CSSProperties = { width: "100%", maxWidth: "none", margin: 0, display: "grid", gap: 12 };
 const header: CSSProperties = { background: "#fff", border: "1px solid #d1d5db", borderRadius: 10, padding: 18, display: "flex", justifyContent: "space-between", gap: 16 };
 const back: CSSProperties = { color: "#2563eb", textDecoration: "none", fontWeight: 900 };
-const title: CSSProperties = { margin: "10px 0 8px", fontSize: 30, fontWeight: 950 };
+const title: CSSProperties = { margin: "8px 0 6px", fontSize: 25, fontWeight: 950 };
 const metaLine: CSSProperties = { display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap", color: "#6b7280", fontSize: 12, fontWeight: 900 };
 const summaryGrid: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 8 };
 const summaryCard: CSSProperties = { background: "#fff", border: "1px solid #d1d5db", borderRadius: 8, padding: 12, display: "grid", gap: 4 };
@@ -324,14 +313,11 @@ const list: CSSProperties = { display: "grid", gap: 8 };
 const checkRow: CSSProperties = { display: "grid", gridTemplateColumns: "1fr auto auto", gap: 8, alignItems: "center", borderBottom: "1px solid #eef2f7", padding: "6px 0" };
 const checkLabel: CSSProperties = { display: "flex", alignItems: "center", gap: 6 };
 const smallMuted: CSSProperties = { color: "#9ca3af", fontSize: 12 };
-const actionRow: CSSProperties = { display: "flex", gap: 8, flexWrap: "wrap" };
 const submitForm: CSSProperties = { display: "grid", gap: 8 };
-const twoCols: CSSProperties = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 };
-const input: CSSProperties = { width: "100%", height: 34, border: "1px solid #d1d5db", borderRadius: 8, padding: "0 9px", background: "#fff" };
 const textarea: CSSProperties = { width: "100%", border: "1px solid #d1d5db", borderRadius: 8, padding: 9, background: "#fff", resize: "vertical" };
 const primaryButton: CSSProperties = { height: 34, border: "1px solid #111827", borderRadius: 8, background: "#111827", color: "#fff", padding: "0 12px", fontWeight: 950 };
-const smallGhost: CSSProperties = { ...primaryButton, background: "#fff", color: "#111827", borderColor: "#d1d5db" };
-const dangerButton: CSSProperties = { ...primaryButton, background: "#fff", color: "#991b1b", borderColor: "#fecaca" };
+const smallGhost: CSSProperties = { ...primaryButton, background: "#fff", color: "#111827", border: "1px solid #d1d5db" };
+const dangerButton: CSSProperties = { ...primaryButton, background: "#fff", color: "#991b1b", border: "1px solid #fecaca" };
 const commentForm: CSSProperties = { display: "grid", gap: 8 };
 const commentItem: CSSProperties = { display: "grid", gap: 4, border: "1px solid #e5e7eb", borderRadius: 8, padding: 10, background: "#fbfcfe" };
 const timeline: CSSProperties = { display: "grid", gap: 10 };

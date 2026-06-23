@@ -14,7 +14,6 @@ import {
   deleteMemo,
   deleteStudent,
   toggleStudentMemoImportant,
-  updateScore,
   updateStudent,
   updateStudentMemo,
 } from "../actions";
@@ -22,6 +21,26 @@ import {
 type Props = {
   params: Promise<{ studentId: string }>;
   searchParams: Promise<{ tab?: string; memoQ?: string }>;
+};
+
+type ScorePoint = {
+  date: string;
+  title: string;
+  rawScore: number;
+  maxScore: number;
+  percent: number;
+};
+
+type ScoreAnalysis = {
+  points: ScorePoint[];
+  average: number;
+  latest: ScorePoint | null;
+  previous: ScorePoint | null;
+  best: ScorePoint | null;
+  lowest: ScorePoint | null;
+  delta: number | null;
+  summary: string;
+  advice: string;
 };
 
 const tabs = [
@@ -104,7 +123,7 @@ export default async function StudentDetailPage({ params, searchParams }: Props)
         [memo.content, memo.writer.name, memoTypeText(memo.type)].join(" ").toLocaleLowerCase("ko-KR").includes(memoQ.toLocaleLowerCase("ko-KR"))
       )
     : student.memos;
-  const scoreGroups = groupBy(student.scoreRecords, (record) => record.title || "테스트");
+  const scoreAnalysis = buildScoreAnalysis(student.scoreRecords);
   const schoolGroups = groupBy(student.schoolScoreRecords, (record) => record.subject || "학교 성적");
   const careRecords = [
     ...student.counselingRecords.map((record) => ({ kind: "상담", date: record.date, title: record.title, content: record.content, status: record.status, owner: record.owner?.name ?? "-" })),
@@ -360,18 +379,7 @@ export default async function StudentDetailPage({ params, searchParams }: Props)
 
             {activeTab === "scores" && (
               <HistoryPanel title="성적 이력">
-                <form action={updateScore} style={inlineAddForm}>
-                  <input type="hidden" name="studentId" value={student.id} />
-                  <input type="date" name="date" defaultValue={todayKoreaDate()} style={miniInput} />
-                  <input name="title" placeholder="시험명" required style={wideInput} />
-                  <input name="score" type="number" placeholder="점수" style={miniInput} />
-                  <input name="maxScore" type="number" defaultValue={100} style={miniInput} />
-                  <button style={smallPrimary}>점수 추가</button>
-                </form>
-                {Object.entries(scoreGroups).map(([title, records]) => (
-                  <ScoreGroup key={title} title={title} studentId={student.id} records={records} />
-                ))}
-                {student.scoreRecords.length === 0 && <Empty>성적 이력이 없습니다.</Empty>}
+                <ScoreAnalysisPanel analysis={scoreAnalysis} />
               </HistoryPanel>
             )}
 
@@ -432,47 +440,96 @@ function CompactRecordForm({ title, action, studentId, type }: { title: string; 
   );
 }
 
-function ScoreGroup({
-  title,
-  studentId,
-  records,
-}: {
-  title: string;
-  studentId: string;
-  records: Array<{ id: string; date: string; title: string; score: number | null; maxScore: number }>;
-}) {
+function ScoreAnalysisPanel({ analysis }: { analysis: ScoreAnalysis }) {
+  if (analysis.points.length === 0) {
+    return (
+      <section style={scoreAnalysisCard}>
+        <div>
+          <h3 style={analysisTitle}>테스트 성적 그래프</h3>
+          <p style={analysisLead}>테스트 점수를 입력하면 날짜 순서대로 그래프와 분석이 자동으로 표시됩니다.</p>
+        </div>
+        <div style={emptyChartLarge}>분석할 테스트 성적이 없습니다.</div>
+      </section>
+    );
+  }
+
   return (
-    <section style={scoreGroup}>
-      <div style={scoreList}>
-        <h3 style={groupTitle}>{title}</h3>
-        {records.map((record, index) => {
-          const percent = record.score === null ? null : Math.round((record.score / (record.maxScore || 100)) * 100);
-          return (
-            <form key={record.id} action={updateScore} style={scoreEditRow}>
-              <input type="hidden" name="studentId" value={studentId} />
-              <input type="hidden" name="scoreRecordId" value={record.id} />
-              <span style={roundBadge}>{index + 1}회차</span>
-              <input name="title" defaultValue={record.title} aria-label="시험명" style={scoreTitleInput} />
-              <input name="date" type="date" defaultValue={record.date} aria-label="시험일" style={scoreDateInput} />
-              <input name="score" type="number" defaultValue={record.score ?? ""} placeholder="점수" aria-label="점수" style={scoreNumberInput} />
-              <input name="maxScore" type="number" defaultValue={record.maxScore} aria-label="만점" style={scoreNumberInput} />
-              <span style={softBadge}>{percent === null ? "-" : gradeText(percent)}</span>
-              <button style={scoreSaveButton}>저장</button>
-            </form>
-          );
-        })}
-        <form action={updateScore} style={scoreAddRow}>
-          <input type="hidden" name="studentId" value={studentId} />
-          <span style={roundBadge}>{records.length + 1}회차</span>
-          <input name="title" defaultValue={title} aria-label="시험명" style={scoreTitleInput} />
-          <input name="date" type="date" defaultValue={todayKoreaDate()} aria-label="시험일" style={scoreDateInput} />
-          <input name="score" type="number" placeholder="점수" aria-label="점수" style={scoreNumberInput} />
-          <input name="maxScore" type="number" defaultValue={records[0]?.maxScore ?? 100} aria-label="만점" style={scoreNumberInput} />
-          <button style={scoreAddButton}>회차 추가</button>
-        </form>
+    <section style={scoreAnalysisCard}>
+      <div style={analysisHeader}>
+        <div>
+          <h3 style={analysisTitle}>테스트 성적 그래프</h3>
+          <p style={analysisLead}>성적 이력의 테스트 점수를 만점 대비 100점 환산으로 분석합니다.</p>
+        </div>
+        <span style={softBadge}>{analysis.points.length}회 기록</span>
       </div>
-      <MiniLineChart values={records.map((record) => (record.score === null ? null : (record.score / (record.maxScore || 100)) * 100))} />
+
+      <div style={scoreMetricGrid}>
+        <ScoreMetric label="평균" value={`${formatScoreValue(analysis.average)}점`} />
+        <ScoreMetric label="최근" value={analysis.latest ? `${formatScoreValue(analysis.latest.percent)}점` : "-"} sub={analysis.latest?.title} />
+        <ScoreMetric label="최고" value={analysis.best ? `${formatScoreValue(analysis.best.percent)}점` : "-"} sub={analysis.best?.title} />
+        <ScoreMetric label="최근 변화" value={analysis.delta === null ? "-" : `${analysis.delta > 0 ? "+" : ""}${formatScoreValue(analysis.delta)}점`} tone={analysis.delta !== null && analysis.delta < -5 ? "danger" : analysis.delta !== null && analysis.delta > 5 ? "good" : "default"} />
+      </div>
+
+      <div style={analysisLayout}>
+        <ScoreTrendChart points={analysis.points} />
+        <div style={analysisCopy}>
+          <b>{analysis.summary}</b>
+          <p>{analysis.advice}</p>
+          {analysis.lowest && <span style={softBadge}>보완 필요: {analysis.lowest.title} {formatScoreValue(analysis.lowest.percent)}점</span>}
+        </div>
+      </div>
     </section>
+  );
+}
+
+function ScoreMetric({ label, value, sub, tone = "default" }: { label: string; value: string; sub?: string; tone?: "default" | "good" | "danger" }) {
+  return (
+    <div style={{ ...scoreMetric, ...(tone === "good" ? scoreMetricGood : {}), ...(tone === "danger" ? scoreMetricDanger : {}) }}>
+      <span>{label}</span>
+      <b>{value}</b>
+      {sub && <small>{sub}</small>}
+    </div>
+  );
+}
+
+function ScoreTrendChart({ points }: { points: ScorePoint[] }) {
+  if (points.length === 0) return <div style={emptyChartLarge}>차트 없음</div>;
+
+  const width = 760;
+  const height = 250;
+  const pad = { top: 22, right: 28, bottom: 44, left: 44 };
+  const graphWidth = width - pad.left - pad.right;
+  const graphHeight = height - pad.top - pad.bottom;
+  const xFor = (index: number) => pad.left + (points.length === 1 ? graphWidth / 2 : (index * graphWidth) / (points.length - 1));
+  const yFor = (value: number) => pad.top + ((100 - clamp(value, 0, 100)) / 100) * graphHeight;
+  const coords = points.map((point, index) => ({ point, x: xFor(index), y: yFor(point.percent) }));
+  const line = coords.map((coord) => `${coord.x},${coord.y}`).join(" ");
+  const labelStep = Math.max(1, Math.ceil(points.length / 7));
+
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="테스트 성적 추이 그래프" style={scoreTrendChart}>
+      {[0, 25, 50, 75, 100].map((tick) => {
+        const y = yFor(tick);
+        return (
+          <g key={tick}>
+            <line x1={pad.left} y1={y} x2={width - pad.right} y2={y} stroke="#e5e7eb" />
+            <text x={pad.left - 10} y={y + 4} textAnchor="end" fontSize="11" fill="#64748b">{tick}</text>
+          </g>
+        );
+      })}
+      <polyline points={line} fill="none" stroke="#2563eb" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+      {coords.map(({ point, x, y }, index) => (
+        <g key={`${point.date}-${point.title}-${index}`}>
+          <circle cx={x} cy={y} r="5" fill="#fff" stroke="#2563eb" strokeWidth="3">
+            <title>{`${point.title} / ${point.date} / ${point.rawScore}/${point.maxScore}점 (${formatScoreValue(point.percent)}점 환산)`}</title>
+          </circle>
+          <text x={x} y={y - 10} textAnchor="middle" fontSize="11" fill="#111827" fontWeight="800">{formatScoreValue(point.percent)}</text>
+          {(index % labelStep === 0 || index === points.length - 1) && (
+            <text x={x} y={height - 16} textAnchor="middle" fontSize="11" fill="#64748b">{point.date.slice(5)}</text>
+          )}
+        </g>
+      ))}
+    </svg>
   );
 }
 
@@ -538,6 +595,69 @@ function groupBy<T>(items: T[], getKey: (item: T) => string) {
   }, {});
 }
 
+function buildScoreAnalysis(records: Array<{ date: string; title: string; score: number | null; maxScore: number }>): ScoreAnalysis {
+  const points = records
+    .filter((record) => typeof record.score === "number" && record.maxScore > 0)
+    .sort((a, b) => a.date.localeCompare(b.date) || a.title.localeCompare(b.title, "ko-KR"))
+    .map((record) => ({
+      date: record.date,
+      title: record.title || "테스트",
+      rawScore: record.score ?? 0,
+      maxScore: record.maxScore || 100,
+      percent: roundScore(((record.score ?? 0) / (record.maxScore || 100)) * 100),
+    }));
+
+  const average = points.length ? roundScore(points.reduce((sum, point) => sum + point.percent, 0) / points.length) : 0;
+  const latest = points.at(-1) ?? null;
+  const previous = points.at(-2) ?? null;
+  const best = points.reduce<ScorePoint | null>((top, point) => (!top || point.percent > top.percent ? point : top), null);
+  const lowest = points.reduce<ScorePoint | null>((low, point) => (!low || point.percent < low.percent ? point : low), null);
+  const delta = latest && previous ? roundScore(latest.percent - previous.percent) : null;
+
+  return {
+    points,
+    average,
+    latest,
+    previous,
+    best,
+    lowest,
+    delta,
+    summary: scoreSummary(points, average, latest, previous, delta),
+    advice: scoreAdvice(points, average, latest, lowest, delta),
+  };
+}
+
+function scoreSummary(points: ScorePoint[], average: number, latest: ScorePoint | null, previous: ScorePoint | null, delta: number | null) {
+  if (points.length === 0) return "아직 분석할 테스트 성적이 없습니다.";
+  if (!latest || !previous || delta === null) return `첫 테스트는 ${formatScoreValue(average)}점 환산입니다. 다음 성적부터 추세를 볼 수 있습니다.`;
+  if (delta >= 5) return `최근 ${latest.title}에서 직전보다 ${formatScoreValue(delta)}점 상승했습니다.`;
+  if (delta <= -5) return `최근 ${latest.title}에서 직전보다 ${formatScoreValue(Math.abs(delta))}점 하락했습니다.`;
+  return `최근 점수는 직전과 큰 차이 없이 안정적으로 유지되고 있습니다.`;
+}
+
+function scoreAdvice(points: ScorePoint[], average: number, latest: ScorePoint | null, lowest: ScorePoint | null, delta: number | null) {
+  if (points.length === 0) return "테스트 점수를 입력하면 평균, 최근 변화, 취약 구간을 자동으로 계산합니다.";
+  if (!latest) return "최근 테스트 성적을 추가하면 더 정확한 분석을 볼 수 있습니다.";
+  if (latest.percent < average - 5) return `최근 점수가 평균보다 낮습니다. ${lowest?.title ?? "낮은 점수 시험"} 범위의 오답 원인을 먼저 확인하는 편이 좋습니다.`;
+  if (delta !== null && delta >= 5) return "상승세가 보입니다. 같은 풀이 루틴을 유지하면서 다음 테스트에서 실수 유형만 별도로 체크하면 좋습니다.";
+  if (delta !== null && delta <= -5) return "하락세가 보여서 최근 단원 복습과 시간 배분 점검이 필요합니다.";
+  if (average >= 85) return "전체 평균이 높습니다. 고난도 문항과 실수 방지 위주로 관리하면 좋습니다.";
+  if (average < 60) return "기초 개념과 필수 유형을 우선 보강해야 합니다. 짧은 단위 테스트를 자주 넣는 편이 좋습니다.";
+  return "평균 흐름은 중간권입니다. 점수가 낮았던 시험의 단원별 오답을 묶어서 보완하면 상승 여지가 있습니다.";
+}
+
+function roundScore(value: number) {
+  return Math.round(value * 10) / 10;
+}
+
+function formatScoreValue(value: number) {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
 function buildTags(student: { grade: string | null; subject: string | null; currentLevel: string | null; status: string }, classGroup?: { name: string } | null) {
   return [student.grade, student.subject, student.currentLevel, classGroup?.name, statusText[student.status]].filter(Boolean);
 }
@@ -562,15 +682,6 @@ function statusBadge(status: string): CSSProperties {
   return softBadge;
 }
 
-function gradeText(percent: number) {
-  if (percent >= 90) return "1등급";
-  if (percent >= 80) return "2등급";
-  if (percent >= 70) return "3등급";
-  if (percent >= 60) return "4등급";
-  if (percent >= 50) return "5등급";
-  return "미통과";
-}
-
 function formatDate(date: Date) {
   return date.toISOString().slice(0, 10);
 }
@@ -586,7 +697,7 @@ function formatDateTime(date: Date) {
 }
 
 const page: CSSProperties = { minHeight: "100vh", padding: 18, background: "#eef1f5", color: "#111827" };
-const shell: CSSProperties = { maxWidth: 1500, margin: "0 auto", background: "#fff", border: "1px solid #d6dbe2", borderRadius: 18, boxShadow: "0 18px 44px rgba(15,23,42,.12)", overflow: "hidden" };
+const shell: CSSProperties = { width: "100%", maxWidth: "none", margin: 0, background: "#fff", border: "1px solid #d6dbe2", borderRadius: 18, boxShadow: "0 18px 44px rgba(15,23,42,.12)", overflow: "hidden" };
 const topBar: CSSProperties = { height: 58, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, padding: "8px 18px", borderBottom: "1px solid #e5e7eb", background: "#fbfcfe" };
 const backLink: CSSProperties = { color: "#6b7280", textDecoration: "none", fontSize: 12, fontWeight: 900 };
 const pageTitle: CSSProperties = { margin: 0, fontSize: 18, fontWeight: 950 };
@@ -648,20 +759,24 @@ const recordBadges: CSSProperties = { display: "flex", alignItems: "center", gap
 const formPair: CSSProperties = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 };
 const compactForm: CSSProperties = { display: "grid", gap: 8, border: "1px solid #e5e7eb", borderRadius: 10, padding: 10, background: "#fbfcfe" };
 const inlineAddForm: CSSProperties = { display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", border: "1px solid #e5e7eb", borderRadius: 10, padding: 10, background: "#fbfcfe" };
+const scoreAnalysisCard: CSSProperties = { border: "1px solid #dbe3ef", borderRadius: 10, padding: 14, background: "#fbfdff", display: "grid", gap: 12 };
+const analysisHeader: CSSProperties = { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10, flexWrap: "wrap" };
+const analysisTitle: CSSProperties = { margin: 0, fontSize: 18, fontWeight: 950 };
+const analysisLead: CSSProperties = { margin: "4px 0 0", color: "#64748b", fontSize: 13, fontWeight: 850 };
+const scoreMetricGrid: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(132px, 1fr))", gap: 8 };
+const scoreMetric: CSSProperties = { border: "1px solid #e5e7eb", borderRadius: 8, background: "#fff", padding: "10px 11px", display: "grid", gap: 3, minHeight: 76 };
+const scoreMetricGood: CSSProperties = { border: "1px solid #bfdbfe", background: "#eff6ff" };
+const scoreMetricDanger: CSSProperties = { border: "1px solid #fecaca", background: "#fef2f2" };
+const analysisLayout: CSSProperties = { display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(220px, 300px)", gap: 12, alignItems: "center" };
+const scoreTrendChart: CSSProperties = { width: "100%", minHeight: 220, border: "1px solid #e5e7eb", borderRadius: 10, background: "#fff" };
+const analysisCopy: CSSProperties = { display: "grid", gap: 9, color: "#374151", fontSize: 14, lineHeight: 1.55 };
+const emptyChartLarge: CSSProperties = { minHeight: 180, display: "grid", placeItems: "center", color: "#9ca3af", fontSize: 13, fontWeight: 900, border: "1px dashed #d1d5db", borderRadius: 10, background: "#fff" };
 const wideInput: CSSProperties = { ...miniInput, width: 180 };
 const answerText: CSSProperties = { marginTop: 4, color: "#2563eb" };
 const scoreGroup: CSSProperties = { display: "grid", gridTemplateColumns: "1fr 240px", gap: 16, alignItems: "center", borderBottom: "1px solid #e5e7eb", padding: "16px 0" };
 const scoreList: CSSProperties = { display: "grid", gap: 8 };
 const groupTitle: CSSProperties = { margin: "0 0 6px", fontSize: 17, fontWeight: 950 };
 const scoreRow: CSSProperties = { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", fontSize: 14 };
-const scoreEditRow: CSSProperties = { display: "grid", gridTemplateColumns: "58px minmax(130px, 1.3fr) 128px 78px 70px auto auto", gap: 6, alignItems: "center", fontSize: 13 };
-const scoreAddRow: CSSProperties = { ...scoreEditRow, marginTop: 4, paddingTop: 8, borderTop: "1px dashed #d1d5db" };
-const roundBadge: CSSProperties = { ...softBadge, justifyContent: "center", height: 30, borderRadius: 7, padding: "0 7px" };
-const scoreTitleInput: CSSProperties = { ...miniInput, height: 30 };
-const scoreDateInput: CSSProperties = { ...miniInput, height: 30 };
-const scoreNumberInput: CSSProperties = { ...miniInput, height: 30, textAlign: "right" };
-const scoreSaveButton: CSSProperties = { height: 30, border: "1px solid #d1d5db", borderRadius: 7, background: "#fff", color: "#111827", padding: "0 9px", fontSize: 12, fontWeight: 950 };
-const scoreAddButton: CSSProperties = { ...scoreSaveButton, borderColor: "#111827", background: "#111827", color: "#fff" };
 const scorePill: CSSProperties = { ...softBadge, background: "#fff", border: "1px solid #d1d5db", color: "#111827" };
 const chart: CSSProperties = { width: "100%", maxWidth: 230, background: "#fff" };
 const emptyChart: CSSProperties = { height: 82, display: "grid", placeItems: "center", color: "#9ca3af", fontSize: 12, fontWeight: 900, border: "1px dashed #d1d5db", borderRadius: 10 };

@@ -371,11 +371,11 @@ function daysAgo(days: number) {
   return date.toISOString().slice(0, 10);
 }
 
-const page: CSSProperties = { padding: 24, color: "#111827", background: "#f8fafc", minHeight: "100vh" };
+const page: CSSProperties = { padding: 14, color: "#111827", background: "#f8fafc", minHeight: "100vh" };
 const container: CSSProperties = { display: "flex", flexDirection: "column", gap: 14 };
 const header: CSSProperties = { display: "flex", justifyContent: "space-between", gap: 16, alignItems: "flex-end", background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, padding: 18 };
 const eyebrow: CSSProperties = { margin: 0, color: "#2563eb", fontWeight: 900, fontSize: 12 };
-const title: CSSProperties = { margin: "4px 0", fontSize: 28, fontWeight: 950 };
+const title: CSSProperties = { margin: "4px 0", fontSize: 25, fontWeight: 950 };
 const desc: CSSProperties = { margin: 0, color: "#6b7280", fontWeight: 700 };
 const headerActions: CSSProperties = { display: "flex", gap: 8, alignItems: "center" };
 const primaryButton: CSSProperties = { border: 0, borderRadius: 8, background: "#111827", color: "#fff", padding: "10px 13px", fontWeight: 900, textDecoration: "none", cursor: "pointer" };
@@ -426,5 +426,5 @@ const closeButton: CSSProperties = { border: "1px solid #d1d5db", borderRadius: 
 const deleteForm: CSSProperties = { marginTop: 10, paddingTop: 10, borderTop: "1px solid #e5e7eb", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" };
 const dangerButton: CSSProperties = { border: "1px solid #fecaca", borderRadius: 7, background: "#fff1f2", color: "#be123c", padding: "8px 10px", fontWeight: 950, cursor: "pointer" };
 const statusBadge: CSSProperties = { display: "inline-flex", border: "1px solid", borderRadius: 999, padding: "4px 8px", fontWeight: 950, background: "#fff" };
-const empty: CSSProperties = { padding: 28, textAlign: "center", color: "#6b7280", fontWeight: 800 };
+const empty: CSSProperties = { padding: 18, textAlign: "center", color: "#6b7280", fontWeight: 800 };
 const endedRow: CSSProperties = { opacity: 0.62, background: "#f9fafb" };

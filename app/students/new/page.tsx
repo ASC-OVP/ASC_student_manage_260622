@@ -83,10 +83,10 @@ export default async function NewStudentPage() {
   );
 }
 
-const page: CSSProperties = { padding: 32, color: "#111827" };
-const card: CSSProperties = { maxWidth: 820, margin: "0 auto", background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: 28, boxShadow: "0 8px 24px rgba(15,23,42,.06)" };
+const page: CSSProperties = { padding: 16, color: "#111827" };
+const card: CSSProperties = { width: "100%", maxWidth: "none", margin: 0, background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: 16, boxShadow: "0 8px 24px rgba(15,23,42,.06)" };
 const back: CSSProperties = { color: "#2563eb", fontWeight: 900, textDecoration: "none" };
-const title: CSSProperties = { fontSize: 30, fontWeight: 950 };
+const title: CSSProperties = { fontSize: 25, fontWeight: 950 };
 const form: CSSProperties = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 };
 const label: CSSProperties = { display: "flex", flexDirection: "column", gap: 8, fontWeight: 900 };
 const input: CSSProperties = { padding: "12px", border: "1px solid #d1d5db", borderRadius: 10, background: "#fff" };

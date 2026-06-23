@@ -97,12 +97,12 @@ function errorMessage(error: string) {
   return "권한 또는 입력값을 확인하세요.";
 }
 
-const page: CSSProperties = { padding: 32, color: "#111827" };
-const container: CSSProperties = { maxWidth: 1120, margin: "0 auto" };
-const title: CSSProperties = { fontSize: 32, fontWeight: 950, margin: "0 0 8px" };
+const page: CSSProperties = { padding: 16, color: "#111827" };
+const container: CSSProperties = { width: "100%", maxWidth: "none", margin: 0 };
+const title: CSSProperties = { fontSize: 25, fontWeight: 950, margin: "0 0 8px" };
 const desc: CSSProperties = { color: "#6b7280", margin: "0 0 18px" };
 const grid: CSSProperties = { display: "grid", gridTemplateColumns: "360px 1fr", gap: 18 };
-const card: CSSProperties = { background: "#fff", border: "1px solid #e5e7eb", borderRadius: 8, padding: 20 };
+const card: CSSProperties = { background: "#fff", border: "1px solid #e5e7eb", borderRadius: 8, padding: 14 };
 const wideCard: CSSProperties = { gridColumn: "1 / -1" };
 const sectionTitle: CSSProperties = { margin: "0 0 14px", fontSize: 20, fontWeight: 950 };
 const form: CSSProperties = { display: "flex", flexDirection: "column", gap: 10 };

@@ -1,9 +1,10 @@
 import Link from "next/link";
 import type { CSSProperties, ReactNode } from "react";
 import { requireUser } from "@/lib/auth";
+import { getAssistantWorkNotes, type AssistantWorkNote } from "@/lib/assistantWorkNotes";
 import { prisma } from "@/lib/prisma";
 import type { AssistantWorkShift, User } from "@/lib/generated/prisma";
-import { deleteWorkShiftAction, saveWorkShiftAction } from "./actions";
+import { deleteWorkShiftAction, saveAssistantWorkNoteAction, saveWorkShiftAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -52,6 +53,8 @@ export default async function WorkPage({ searchParams }: Props = {}) {
         })
       : [],
   ]);
+  const assistantNotes = managerView ? await getAssistantWorkNotes(user.academyId) : {};
+  const selectedAssistantNote = selectedAssistantId ? assistantNotes[selectedAssistantId] : undefined;
 
   const summary = summarizeShifts(shifts);
   const selectedDateShifts = shifts.filter((shift) => shift.workDate === selectedDate);
@@ -131,6 +134,10 @@ export default async function WorkPage({ searchParams }: Props = {}) {
                     />
                   </div>
                   <aside style={sideWorkPane}>
+                    {managerView && selectedAssistantId && (
+                      <AssistantWorkNoteForm assistantId={selectedAssistantId} note={selectedAssistantNote} />
+                    )}
+
                     <div style={panelHead}>
                       <div>
                         <h2 style={panelTitle}>{longDateText(selectedDate)}</h2>
@@ -140,7 +147,7 @@ export default async function WorkPage({ searchParams }: Props = {}) {
                             : "날짜를 눌러 근무를 저장합니다."}
                         </p>
                       </div>
-                      <Link href={workHref({ assistantId: selectedAssistantId, month, date: toYmd(new Date()), managerView })} style={smallLink}>
+                      <Link href={workHref({ assistantId: selectedAssistantId, month: toYm(new Date()), date: toYmd(new Date()), managerView })} style={smallLink}>
                         오늘
                       </Link>
                     </div>
@@ -153,14 +160,14 @@ export default async function WorkPage({ searchParams }: Props = {}) {
                             새 근무
                           </Link>
                         </div>
-                        <ShiftForm shift={selectedShift} assistantId={selectedAssistantId} managerView={managerView} />
+                        <ShiftForm key={selectedShift.id} shift={selectedShift} assistantId={selectedAssistantId} managerView={managerView} />
                         <form action={deleteWorkShiftAction}>
                           <input type="hidden" name="shiftId" value={selectedShift.id} />
                           <button style={dangerButton}>삭제</button>
                         </form>
                       </section>
                     ) : (
-                      <ShiftForm assistantId={selectedAssistantId} defaultDate={selectedDate} managerView={managerView} />
+                      <ShiftForm key={`${selectedAssistantId}:${selectedDate}:new`} assistantId={selectedAssistantId} defaultDate={selectedDate} managerView={managerView} />
                     )}
 
                     <div style={dayShiftList}>
@@ -192,6 +199,35 @@ export default async function WorkPage({ searchParams }: Props = {}) {
         </section>
       </section>
     </main>
+  );
+}
+
+function AssistantWorkNoteForm({ assistantId, note }: { assistantId: string; note?: AssistantWorkNote }) {
+  return (
+    <section style={assistantMemoBox}>
+      <div>
+        <h3 style={smallSectionTitle}>조교 운영 메모</h3>
+        <p style={softText}>휴무, 일정 제한, 특이사항처럼 근무표와 별도로 기억할 내용을 남깁니다.</p>
+      </div>
+      <form action={saveAssistantWorkNoteAction} style={assistantMemoForm}>
+        <input type="hidden" name="assistantId" value={assistantId} />
+        <textarea
+          name="content"
+          rows={4}
+          defaultValue={note?.content ?? ""}
+          placeholder="예: 개인 사정으로 3주간 쉼, 시험 기간 전까지 평일 근무 불가"
+          style={memoTextarea}
+        />
+        <div style={memoActionRow}>
+          <span style={memoMeta}>
+            {note?.updatedAt
+              ? `마지막 수정: ${note.updatedByName || "관리자"} / ${new Date(note.updatedAt).toLocaleDateString("ko-KR")}`
+              : "저장된 메모 없음"}
+          </span>
+          <button style={smallPrimaryButton}>메모 저장</button>
+        </div>
+      </form>
+    </section>
   );
 }
 
@@ -236,9 +272,9 @@ function SalaryMonthCalendar({
               href={workHref({ assistantId, month: toYm(day), date, managerView })}
               style={{
                 ...calendarDay,
+                ...(date === today ? calendarDayToday : {}),
                 ...(!inMonth ? calendarDayMuted : {}),
                 ...(selected ? calendarDaySelected : {}),
-                ...(date === today ? calendarDayToday : {}),
               }}
             >
               <div style={dayNumberLine}>
@@ -441,27 +477,27 @@ function shiftChipStyle(status: string): CSSProperties {
   return shiftChip;
 }
 
-const page: CSSProperties = { padding: 20, color: "#111827", background: "#f3f4f6", minHeight: "100vh" };
-const container: CSSProperties = { maxWidth: 1600, margin: "0 auto", display: "grid", gap: 12 };
+const page: CSSProperties = { padding: 14, color: "#111827", background: "#f3f4f6", minHeight: "100vh" };
+const container: CSSProperties = { width: "100%", maxWidth: "none", margin: 0, display: "grid", gap: 12 };
 const header: CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 16, background: "#fff", border: "1px solid #d1d5db", borderRadius: 8, padding: 16 };
 const eyebrow: CSSProperties = { margin: "0 0 4px", color: "#2563eb", fontWeight: 950, fontSize: 12 };
-const title: CSSProperties = { margin: 0, fontSize: 28, fontWeight: 950 };
+const title: CSSProperties = { margin: 0, fontSize: 25, fontWeight: 950 };
 const desc: CSSProperties = { margin: "6px 0 0", color: "#6b7280", fontSize: 14 };
 const monthForm: CSSProperties = { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" };
 const layout = (managerView: boolean): CSSProperties => ({ display: "grid", gridTemplateColumns: managerView ? "260px minmax(0, 1fr)" : "1fr", gap: 12, alignItems: "start" });
 const assistantPanel: CSSProperties = { background: "#fff", border: "1px solid #d1d5db", borderRadius: 8, padding: 12, position: "sticky", top: 12 };
 const assistantList: CSSProperties = { display: "grid", gap: 7 };
 const assistantLink: CSSProperties = { display: "grid", gap: 3, border: "1px solid #e5e7eb", borderRadius: 7, padding: 10, color: "#111827", textDecoration: "none", background: "#fff" };
-const activeAssistantLink: CSSProperties = { ...assistantLink, borderColor: "#2563eb", background: "#eff6ff" };
+const activeAssistantLink: CSSProperties = { ...assistantLink, border: "1px solid #2563eb", background: "#eff6ff" };
 const mainColumn: CSSProperties = { display: "grid", gap: 12, minWidth: 0 };
 const salaryCalendarPanel: CSSProperties = { background: "#fff", border: "1px solid #d1d5db", borderRadius: 8, padding: 14, display: "grid", gap: 12 };
 const salaryTop: CSSProperties = { display: "flex", justifyContent: "space-between", gap: 16, alignItems: "end", flexWrap: "wrap" };
-const monthTitle: CSSProperties = { margin: "8px 0 0", fontSize: 30, fontWeight: 950 };
+const monthTitle: CSSProperties = { margin: "6px 0 0", fontSize: 25, fontWeight: 950 };
 const payTotalBox: CSSProperties = { display: "grid", justifyItems: "end", gap: 4 };
 const summaryGrid: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 8 };
 const summaryCard: CSSProperties = { border: "1px solid #e5e7eb", borderRadius: 8, padding: 11, display: "grid", gap: 5, background: "#fff" };
-const moneyCard: CSSProperties = { borderColor: "#bbf7d0", background: "#f0fdf4" };
-const warnCard: CSSProperties = { borderColor: "#fed7aa", background: "#fff7ed" };
+const moneyCard: CSSProperties = { border: "1px solid #bbf7d0", background: "#f0fdf4" };
+const warnCard: CSSProperties = { border: "1px solid #fed7aa", background: "#fff7ed" };
 const calendarWrap: CSSProperties = { display: "grid", gap: 0, border: "1px solid #d1d5db", borderRadius: 8, overflow: "hidden" };
 const weekdayRow: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(7, minmax(74px, 1fr))", background: "#f8fafc", borderBottom: "1px solid #d1d5db", textAlign: "center", fontWeight: 950, color: "#6b7280", fontSize: 12 };
 const calendarGrid: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(7, minmax(74px, 1fr))" };
@@ -485,6 +521,12 @@ const panelHead: CSSProperties = { display: "flex", justifyContent: "space-betwe
 const panelTitle: CSSProperties = { margin: 0, fontSize: 18, fontWeight: 950 };
 const softText: CSSProperties = { color: "#64748b", fontSize: 12, fontWeight: 900, margin: "4px 0 0" };
 const smallLink: CSSProperties = { color: "#2563eb", fontWeight: 950, textDecoration: "none", fontSize: 12 };
+const assistantMemoBox: CSSProperties = { border: "1px solid #bfdbfe", borderRadius: 8, padding: 10, background: "#eff6ff", display: "grid", gap: 10 };
+const assistantMemoForm: CSSProperties = { display: "grid", gap: 8 };
+const memoTextarea: CSSProperties = { width: "100%", resize: "vertical", minHeight: 92, border: "1px solid #93c5fd", borderRadius: 8, padding: 9, background: "#fff", color: "#111827", lineHeight: 1.5 };
+const memoActionRow: CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" };
+const memoMeta: CSSProperties = { color: "#64748b", fontSize: 12, fontWeight: 800 };
+const smallPrimaryButton: CSSProperties = { height: 32, border: "1px solid #1d4ed8", borderRadius: 7, background: "#1d4ed8", color: "#fff", padding: "0 10px", fontSize: 12, fontWeight: 950 };
 const dayShiftList: CSSProperties = { display: "grid", gap: 8, marginTop: 12 };
 const dayShiftItem: CSSProperties = { border: "1px solid #e5e7eb", borderRadius: 8, padding: 8, background: "#fff", display: "grid", gap: 7 };
 const dayShiftSummary: CSSProperties = { display: "grid", gridTemplateColumns: "auto 1fr auto", gap: 8, alignItems: "center" };
@@ -496,8 +538,8 @@ const shiftForm: CSSProperties = { display: "grid", gridTemplateColumns: "repeat
 const label: CSSProperties = { display: "grid", gap: 6, fontSize: 13, fontWeight: 900 };
 const input: CSSProperties = { width: "100%", height: 36, border: "1px solid #d1d5db", borderRadius: 8, padding: "0 9px", background: "#fff", color: "#111827" };
 const primaryButton: CSSProperties = { height: 36, border: "1px solid #111827", borderRadius: 8, background: "#111827", color: "#fff", padding: "0 12px", fontWeight: 950 };
-const smallGhost: CSSProperties = { ...primaryButton, background: "#fff", color: "#111827", borderColor: "#d1d5db" };
-const dangerButton: CSSProperties = { ...primaryButton, background: "#dc2626", borderColor: "#dc2626" };
+const smallGhost: CSSProperties = { ...primaryButton, background: "#fff", color: "#111827", border: "1px solid #d1d5db" };
+const dangerButton: CSSProperties = { ...primaryButton, background: "#dc2626", border: "1px solid #dc2626" };
 const badge: CSSProperties = { display: "inline-flex", alignItems: "center", height: 24, borderRadius: 999, background: "#f1f5f9", color: "#475569", padding: "0 8px", fontSize: 12, fontWeight: 950 };
 const infoBadge: CSSProperties = { ...badge, background: "#dbeafe", color: "#1d4ed8" };
 const successBadge: CSSProperties = { ...badge, background: "#dcfce7", color: "#166534" };

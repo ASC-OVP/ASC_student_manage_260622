@@ -1,17 +1,16 @@
 import { canCreateTask, requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import type { ClassGroup, RecurringTask, Student, Task, TaskChecklistItem, TaskComment, TaskSubmission, User } from "@/lib/generated/prisma";
+import { sheetFillPalette } from "@/lib/colorPalettes";
 import { daysOfWeekText, generateDueRecurringTasks, getNextRecurringDate, recurringTypeText, weekdayOptions } from "@/lib/recurringTasks";
 import Link from "next/link";
 import type { CSSProperties, ReactNode } from "react";
 import {
   createRecurringTaskAction,
   generateRecurringTasksAction,
-  startTaskAction,
   submitTaskAction,
   toggleRecurringTaskAction,
   updateRecurringTaskAction,
-  updateTaskChecklistItemAction,
   updateTaskColorAction,
   updateTaskStatus,
 } from "./actions";
@@ -55,12 +54,15 @@ const statusOrder: Record<string, number> = {
   REJECTED: 5,
 };
 
+const ASSIGNEE_STATS_PREVIEW_LIMIT = 5;
+const COMPLETED_TODAY_PREVIEW_LIMIT = 4;
+
 export default async function SimpleTasksPage({ searchParams }: Props = {}) {
   const user = await requireUser();
   const params = (await searchParams) ?? {};
   const isAssistant = user.role === "ASSISTANT";
   const canCreate = canCreateTask(user.role);
-  const activeTab = normalizeTab(params.tab, isAssistant);
+  const activeTab = normalizeTab(params.tab);
 
   await generateDueRecurringTasks(user);
 
@@ -178,9 +180,9 @@ export default async function SimpleTasksPage({ searchParams }: Props = {}) {
 
         {!isAssistant && (
           <section style={dashboardGrid}>
-            <Panel title="담당자별 완료율">
+            <Panel title="담당자별 완료율" right={<Link href="/tasks?tab=all" style={smallLink}>전체 보기</Link>}>
               <div style={miniList}>
-                {assigneeStats.map((row) => (
+                {assigneeStats.slice(0, ASSIGNEE_STATS_PREVIEW_LIMIT).map((row) => (
                   <div key={row.id} style={assigneeRow}>
                     <b>{row.name}</b>
                     <span>전체 {row.total}</span>
@@ -189,15 +191,21 @@ export default async function SimpleTasksPage({ searchParams }: Props = {}) {
                     <span style={row.overdue ? dangerBadge : successBadge}>{row.overdue ? `지연 ${row.overdue}` : `${row.rate}%`}</span>
                   </div>
                 ))}
+                {assigneeStats.length > ASSIGNEE_STATS_PREVIEW_LIMIT && (
+                  <MoreListLink href="/tasks?tab=all" count={assigneeStats.length - ASSIGNEE_STATS_PREVIEW_LIMIT} unit="명" label="담당자 현황" />
+                )}
                 {assigneeStats.length === 0 && <Empty>표시할 업무가 없습니다.</Empty>}
               </div>
             </Panel>
 
-            <Panel title="오늘 완료된 업무">
+            <Panel title="오늘 완료된 업무" right={<Link href="/tasks?tab=done" style={smallLink}>전체 보기</Link>}>
               <div style={miniList}>
-                {completedToday.slice(0, 6).map((task) => (
+                {completedToday.slice(0, COMPLETED_TODAY_PREVIEW_LIMIT).map((task) => (
                   <MiniTask key={task.id} task={task} />
                 ))}
+                {completedToday.length > COMPLETED_TODAY_PREVIEW_LIMIT && (
+                  <MoreListLink href="/tasks?tab=done" count={completedToday.length - COMPLETED_TODAY_PREVIEW_LIMIT} unit="개" label="완료 업무" />
+                )}
                 {completedToday.length === 0 && <Empty>오늘 완료된 업무가 없습니다.</Empty>}
               </div>
             </Panel>
@@ -238,9 +246,13 @@ export default async function SimpleTasksPage({ searchParams }: Props = {}) {
                 {visibleTasks.length === 0 && <Empty>업무가 없습니다.</Empty>}
               </div>
             </Panel>
-            <Panel title={isAssistant ? "내 업무 캘린더" : "업무 기간 캘린더"} right={<Link href="/calendar" style={smallLink}>상세 캘린더</Link>}>
-              <CompactTaskCalendar tasks={visibleTasks} currentUserId={user.id} isAssistant={isAssistant} />
-            </Panel>
+            <aside style={stickyCalendarPanel}>
+              <div style={stickyCalendarInner}>
+                <Panel title={isAssistant ? "내 업무 캘린더" : "업무 기간 캘린더"} right={<Link href="/calendar" style={smallLink}>상세 캘린더</Link>}>
+                  <CompactTaskCalendar tasks={visibleTasks} currentUserId={user.id} isAssistant={isAssistant} />
+                </Panel>
+              </div>
+            </aside>
           </section>
         )}
       </section>
@@ -295,13 +307,14 @@ function recurringTaskWhereForRole(user: { id: string; academyId: string; role: 
   return { academyId: user.academyId };
 }
 
-function normalizeTab(value: string | undefined, isAssistant: boolean) {
-  const tabs = ["all", "general", "recurring", "mine", "done"] as const;
+function normalizeTab(value: string | undefined) {
+  const tabs = ["open", "all", "general", "recurring", "mine", "done"] as const;
   if (value && tabs.includes(value as (typeof tabs)[number])) return value;
-  return isAssistant ? "mine" : "all";
+  return "open";
 }
 
 function filterTasksByTab(tasks: TaskRow[], tab: string, userId: string) {
+  if (tab === "open") return tasks.filter((task) => task.status !== "DONE");
   if (tab === "general") return tasks.filter((task) => !task.recurringTaskId);
   if (tab === "mine") return tasks.filter((task) => isTaskAssignedTo(task, userId) && task.status !== "DONE");
   if (tab === "done") return tasks.filter((task) => task.status === "DONE");
@@ -323,6 +336,7 @@ function taskDisplayColor(task: TaskRow, currentUserId: string, isAssistant: boo
 }
 
 function taskPanelTitle(tab: string, isAssistant: boolean) {
+  if (tab === "open") return isAssistant ? "내 미완료 업무" : "미완료 업무";
   if (tab === "general") return "일반 업무 목록";
   if (tab === "mine") return isAssistant ? "내 업무 목록" : "내 업무";
   if (tab === "done") return "완료 업무";
@@ -331,6 +345,7 @@ function taskPanelTitle(tab: string, isAssistant: boolean) {
 
 function TaskTabs({ activeTab, isAssistant }: { activeTab: string; isAssistant: boolean }) {
   const tabs = [
+    { key: "open", label: "미완료 업무" },
     { key: "all", label: "전체 업무" },
     { key: "general", label: "일반 업무" },
     { key: "recurring", label: "정기 업무" },
@@ -549,45 +564,15 @@ function TaskCard({ task, currentUserId, isAssistant }: { task: TaskRow; current
             {task.scheduledDate && <span>예정일 {task.scheduledDate}</span>}
             {task.completedAt && <span>완료 {formatDateTime(task.completedAt)}</span>}
           </div>
+          {lastRecord && <p style={taskNoteStyle}>{lastRecord}</p>}
         </div>
         <div style={taskSide}>
-          <form action={updateTaskColorAction} style={colorForm}>
-            <input type="hidden" name="taskId" value={task.id} />
-            <input type="color" name="color" defaultValue={displayColor} aria-label="업무 색상" style={colorSwatch} />
-            <button style={tinyButton}>색상</button>
-          </form>
+          <TaskColorPicker taskId={task.id} currentColor={displayColor} />
           <span style={task.status === "DONE" ? successBadge : badge}>체크 {checkedCount}/{task.checklistItems.length}</span>
           {task.actualMinutes && <span style={badge}>{task.actualMinutes}분</span>}
+          <TaskActions task={task} canWork={canWork} />
           <Link href={`/tasks/${task.id}`} style={smallLink}>상세</Link>
         </div>
-      </div>
-
-      <div style={cardBodyGrid}>
-        <div style={subPanel}>
-          <b>체크리스트</b>
-          {task.checklistItems.length === 0 ? (
-            <span style={muted}>체크리스트 없음</span>
-          ) : (
-            task.checklistItems.map((item) => (
-              <form key={item.id} action={updateTaskChecklistItemAction} style={checkRow}>
-                <input type="hidden" name="taskId" value={task.id} />
-                <input type="hidden" name="itemId" value={item.id} />
-                <label style={checkLabel}>
-                  <input type="checkbox" name="isDone" defaultChecked={item.isDone} disabled={!canWork || task.status === "DONE"} />
-                  <span>{item.title}</span>
-                </label>
-                {canWork && task.status !== "DONE" && <button style={tinyButton}>저장</button>}
-              </form>
-            ))
-          )}
-        </div>
-
-        <div style={subPanel}>
-          <b>최근 처리 기록</b>
-          {lastRecord ? <p style={subText}>{lastRecord}</p> : <span style={muted}>아직 기록 없음</span>}
-        </div>
-
-        <TaskActions task={task} canWork={canWork} />
       </div>
     </article>
   );
@@ -595,52 +580,59 @@ function TaskCard({ task, currentUserId, isAssistant }: { task: TaskRow; current
 
 function TaskActions({ task, canWork }: { task: TaskRow; canWork: boolean }) {
   if (!canWork) {
-    return (
-      <div style={subPanel}>
-        <b>처리</b>
-        <span style={muted}>담당자만 처리할 수 있습니다.</span>
-      </div>
-    );
+    return <span style={muted}>담당자만 완료</span>;
   }
 
   if (task.status === "DONE") {
     return (
-      <div style={subPanel}>
-        <b>완료됨</b>
-        <span style={muted}>{task.completedAt ? formatDateTime(task.completedAt) : "완료 시각 없음"}</span>
+      <div style={doneAction}>
+        <span style={doneInline}>{task.completedAt ? formatDateTime(task.completedAt) : "완료됨"}</span>
+        <form action={updateTaskStatus} style={completeForm}>
+          <input type="hidden" name="taskId" value={task.id} />
+          <input type="hidden" name="status" value="TODO" />
+          <input type="hidden" name="memo" value="완료 취소" />
+          <button style={smallGhost}>완료 취소</button>
+        </form>
       </div>
     );
   }
 
   return (
-    <div style={subPanel}>
-      <b>처리</b>
-      <div style={actionRow}>
-        {task.status !== "IN_PROGRESS" && (
-          <form action={startTaskAction}>
-            <input type="hidden" name="taskId" value={task.id} />
-            <input type="hidden" name="from" value="/tasks" />
-            <button style={smallPrimary}>진행 시작</button>
-          </form>
-        )}
-        <form action={updateTaskStatus}>
-          <input type="hidden" name="taskId" value={task.id} />
-          <input type="hidden" name="status" value="HOLD" />
-          <button style={smallGhost}>보류</button>
-        </form>
+    <form action={submitTaskAction} style={completeForm}>
+      <input type="hidden" name="taskId" value={task.id} />
+      <input type="hidden" name="from" value="/tasks" />
+      <input type="hidden" name="content" value="완료 처리" />
+      <button style={smallPrimary}>완료</button>
+    </form>
+  );
+}
+
+function TaskColorPicker({ taskId, currentColor }: { taskId: string; currentColor: string }) {
+  const normalizedCurrent = currentColor.toLowerCase();
+
+  return (
+    <details style={colorPicker}>
+      <summary style={colorPickerTrigger} title="업무 색상 선택" aria-label="업무 색상 선택">
+        <span style={currentColorDot(currentColor)} />
+      </summary>
+      <div style={colorPalettePanel}>
+        {sheetFillPalette.map((color) => {
+          const active = normalizedCurrent === color.value.toLowerCase();
+          return (
+            <form key={color.value} action={updateTaskColorAction} style={colorSwatchForm}>
+              <input type="hidden" name="taskId" value={taskId} />
+              <input type="hidden" name="color" value={color.value} />
+              <button
+                type="submit"
+                style={colorPaletteButton(color.value, active)}
+                title={color.label}
+                aria-label={`업무 색상 ${color.label}`}
+              />
+            </form>
+          );
+        })}
       </div>
-      <details style={submitBox}>
-        <summary>완료 기록 남기기</summary>
-        <form action={submitTaskAction} style={submitForm}>
-          <input type="hidden" name="taskId" value={task.id} />
-          <input type="hidden" name="from" value="/tasks" />
-          <textarea name="content" required rows={3} placeholder="처리 내용, 남긴 기록, 미처리 사항을 적어주세요." style={textarea} />
-          <input name="fileUrl" placeholder="첨부 파일/문서 링크 또는 위치" style={input} />
-          <input name="actualMinutes" type="number" placeholder="실제 수행 시간(분)" style={input} />
-          <button style={smallPrimary}>완료 처리</button>
-        </form>
-      </details>
-    </div>
+    </details>
   );
 }
 
@@ -679,6 +671,15 @@ function Panel({ title, right, children }: { title: string; right?: ReactNode; c
 
 function Empty({ children }: { children: ReactNode }) {
   return <div style={empty}>{children}</div>;
+}
+
+function MoreListLink({ href, count, unit, label }: { href: string; count: number; unit: string; label: string }) {
+  return (
+    <Link href={href} style={moreListLink}>
+      +{count}
+      {unit} {label} 더 보기
+    </Link>
+  );
 }
 
 function CompactTaskCalendar({ tasks, currentUserId, isAssistant }: { tasks: TaskRow[]; currentUserId: string; isAssistant: boolean }) {
@@ -891,11 +892,11 @@ function buildAssigneeStats(tasks: TaskRow[]) {
   return [...rows.values()].sort((a, b) => b.total - a.total);
 }
 
-const page: CSSProperties = { padding: 20, color: "#111827", background: "#f3f4f6", minHeight: "100vh" };
-const container: CSSProperties = { maxWidth: 1560, margin: "0 auto", display: "grid", gap: 12 };
+const page: CSSProperties = { padding: 14, color: "#111827", background: "#f3f4f6", minHeight: "100vh" };
+const container: CSSProperties = { width: "100%", maxWidth: "none", margin: 0, display: "grid", gap: 12 };
 const header: CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16 };
 const eyebrow: CSSProperties = { margin: "0 0 4px", color: "#2563eb", fontWeight: 950, fontSize: 12 };
-const title: CSSProperties = { fontSize: 30, fontWeight: 950, margin: "0 0 6px" };
+const title: CSSProperties = { fontSize: 26, fontWeight: 950, margin: "0 0 6px" };
 const desc: CSSProperties = { color: "#6b7280", margin: 0 };
 const headerActions: CSSProperties = { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" };
 const roleBadge: CSSProperties = { border: "1px solid #d1d5db", borderRadius: 999, padding: "8px 12px", background: "#fff", fontWeight: 950 };
@@ -906,11 +907,13 @@ const tabStyle: CSSProperties = { borderRadius: 7, padding: "8px 11px", color: "
 const activeTabStyle: CSSProperties = { ...tabStyle, color: "#fff", background: "#111827" };
 const summaryGrid: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8 };
 const summaryCard: CSSProperties = { background: "#fff", border: "1px solid #e5e7eb", borderRadius: 8, padding: 12, display: "flex", flexDirection: "column", gap: 6 };
-const summaryWarn: CSSProperties = { background: "#fff7ed", borderColor: "#fed7aa" };
-const summaryHold: CSSProperties = { background: "#fffbeb", borderColor: "#fde68a" };
-const summaryDanger: CSSProperties = { background: "#fef2f2", borderColor: "#fecaca" };
+const summaryWarn: CSSProperties = { background: "#fff7ed", border: "1px solid #fed7aa" };
+const summaryHold: CSSProperties = { background: "#fffbeb", border: "1px solid #fde68a" };
+const summaryDanger: CSSProperties = { background: "#fef2f2", border: "1px solid #fecaca" };
 const dashboardGrid: CSSProperties = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 };
-const workSplit: CSSProperties = { display: "grid", gridTemplateColumns: "minmax(0, 1fr) 420px", gap: 12, alignItems: "start" };
+const workSplit: CSSProperties = { display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(320px, 380px)", gap: 10, alignItems: "start", position: "relative", overflow: "visible" };
+const stickyCalendarPanel: CSSProperties = { position: "sticky", top: 14, alignSelf: "start", minWidth: 0, height: "fit-content", zIndex: 3 };
+const stickyCalendarInner: CSSProperties = { maxHeight: "calc(100vh - 28px)", overflowY: "auto", overscrollBehavior: "contain" };
 const panel: CSSProperties = { background: "#fff", border: "1px solid #d1d5db", borderRadius: 8, padding: 12 };
 const panelHead: CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 10 };
 const panelTitle: CSSProperties = { margin: 0, fontSize: 18, fontWeight: 950 };
@@ -919,16 +922,64 @@ const miniList: CSSProperties = { display: "grid", gap: 8 };
 const miniTask: CSSProperties = { display: "grid", gridTemplateColumns: "1fr auto", gap: 8, alignItems: "center", border: "1px solid #e5e7eb", borderRadius: 8, padding: 10 };
 const miniTitle: CSSProperties = { color: "#111827", textDecoration: "none", fontWeight: 950 };
 const assigneeRow: CSSProperties = { display: "grid", gridTemplateColumns: "1fr repeat(4, auto)", gap: 8, alignItems: "center", borderBottom: "1px solid #f1f5f9", padding: "8px 0", fontSize: 13 };
-const taskList: CSSProperties = { display: "grid", gap: 10 };
-const taskCard: CSSProperties = { border: "1px solid #d1d5db", borderRadius: 8, background: "#fff", padding: 12, display: "grid", gap: 10 };
-const taskMain: CSSProperties = { display: "grid", gridTemplateColumns: "1fr auto", gap: 12, alignItems: "start" };
-const taskTopLine: CSSProperties = { display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 };
-const taskTitle: CSSProperties = { color: "#111827", textDecoration: "none", fontSize: 17, fontWeight: 950 };
-const taskDesc: CSSProperties = { margin: "6px 0", color: "#475569", maxWidth: 760, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" };
-const metaLine: CSSProperties = { display: "flex", gap: 10, flexWrap: "wrap", color: "#6b7280", fontSize: 12, fontWeight: 900 };
-const taskSide: CSSProperties = { display: "grid", gap: 6, justifyItems: "end" };
-const colorForm: CSSProperties = { display: "inline-flex", alignItems: "center", gap: 5 };
-const colorSwatch: CSSProperties = { width: 30, height: 28, border: "1px solid #d1d5db", borderRadius: 6, padding: 2, background: "#fff" };
+const moreListLink: CSSProperties = { display: "block", padding: "9px 10px", borderRadius: 8, border: "1px solid #e5e7eb", background: "#f8fafc", color: "#2563eb", textAlign: "center", textDecoration: "none", fontSize: 12, fontWeight: 950 };
+const taskList: CSSProperties = { display: "grid", gap: 6 };
+const taskCard: CSSProperties = { border: "1px solid #d1d5db", borderRadius: 8, background: "#fff", padding: "8px 10px", display: "grid", gap: 6 };
+const taskMain: CSSProperties = { display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 8, alignItems: "center" };
+const taskTopLine: CSSProperties = { display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 4 };
+const taskTitle: CSSProperties = { color: "#111827", textDecoration: "none", fontSize: 15, fontWeight: 950 };
+const taskDesc: CSSProperties = { margin: "3px 0 4px", color: "#475569", maxWidth: 760, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontSize: 13 };
+const taskNoteStyle: CSSProperties = { margin: "3px 0 0", color: "#64748b", fontSize: 12, lineHeight: 1.35, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" };
+const metaLine: CSSProperties = { display: "flex", gap: 8, flexWrap: "wrap", color: "#6b7280", fontSize: 12, fontWeight: 900 };
+const taskSide: CSSProperties = { display: "flex", gap: 5, justifyContent: "flex-end", alignItems: "center", flexWrap: "wrap" };
+const colorPicker: CSSProperties = { position: "relative", display: "inline-flex" };
+const colorPickerTrigger: CSSProperties = {
+  width: 28,
+  height: 28,
+  display: "grid",
+  placeItems: "center",
+  border: "1px solid #d1d5db",
+  borderRadius: 7,
+  background: "#fff",
+  cursor: "pointer",
+  listStyle: "none",
+};
+const colorPalettePanel: CSSProperties = {
+  position: "absolute",
+  top: 32,
+  right: 0,
+  zIndex: 20,
+  width: 236,
+  display: "grid",
+  gridTemplateColumns: "repeat(8, 22px)",
+  gap: 5,
+  padding: 9,
+  border: "1px solid #d1d5db",
+  borderRadius: 8,
+  background: "#fff",
+  boxShadow: "0 14px 34px rgba(15, 23, 42, 0.18)",
+};
+const colorSwatchForm: CSSProperties = { display: "contents" };
+function currentColorDot(color: string): CSSProperties {
+  return {
+    width: 16,
+    height: 16,
+    borderRadius: 999,
+    border: "1px solid #94a3b8",
+    background: color,
+  };
+}
+function colorPaletteButton(color: string, active: boolean): CSSProperties {
+  return {
+    width: 22,
+    height: 22,
+    borderRadius: 999,
+    border: active ? "2px solid #111827" : "1px solid #cbd5e1",
+    background: color,
+    boxShadow: active ? "0 0 0 2px #bfdbfe" : "none",
+    cursor: "pointer",
+  };
+}
 const smallLink: CSSProperties = { color: "#2563eb", textDecoration: "none", fontWeight: 950, fontSize: 12 };
 const label: CSSProperties = { display: "flex", flexDirection: "column", gap: 6, fontWeight: 900, fontSize: 13 };
 const inlineActions: CSSProperties = { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" };
@@ -941,22 +992,18 @@ const tableWrap: CSSProperties = { overflow: "auto", border: "1px solid #e5e7eb"
 const table: CSSProperties = { width: "100%", borderCollapse: "collapse", fontSize: 13 };
 const th: CSSProperties = { textAlign: "left", padding: "9px 10px", background: "#f3f4f6", borderBottom: "1px solid #d1d5db", whiteSpace: "nowrap" };
 const td: CSSProperties = { padding: "9px 10px", borderBottom: "1px solid #f3f4f6", verticalAlign: "top", whiteSpace: "nowrap" };
-const editBox: CSSProperties = { marginTop: 8, minWidth: 680, maxWidth: "80vw", background: "#fff", border: "1px solid #e5e7eb", borderRadius: 8, padding: 10 };
+const subText: CSSProperties = { marginTop: 3, color: "#6b7280", fontSize: 12, fontWeight: 800 };
+const editBox: CSSProperties = { marginTop: 8, minWidth: 0, width: "min(680px, 100%)", maxWidth: "100%", background: "#fff", border: "1px solid #e5e7eb", borderRadius: 8, padding: 10 };
 const summaryButton: CSSProperties = { cursor: "pointer", color: "#2563eb", fontWeight: 950 };
-const cardBodyGrid: CSSProperties = { display: "grid", gridTemplateColumns: "1fr 1fr minmax(260px, .9fr)", gap: 10 };
-const subPanel: CSSProperties = { border: "1px solid #e5e7eb", borderRadius: 8, padding: 10, display: "grid", alignContent: "start", gap: 8, background: "#fbfcfe" };
-const checkRow: CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, fontSize: 13 };
 const checkLabel: CSSProperties = { display: "flex", alignItems: "center", gap: 6 };
-const tinyButton: CSSProperties = { height: 24, border: "1px solid #d1d5db", borderRadius: 6, background: "#fff", fontSize: 11, fontWeight: 900 };
-const subText: CSSProperties = { margin: 0, color: "#475569", lineHeight: 1.5 };
-const actionRow: CSSProperties = { display: "flex", gap: 6, flexWrap: "wrap" };
-const submitBox: CSSProperties = { fontSize: 13, fontWeight: 900 };
-const submitForm: CSSProperties = { display: "grid", gap: 6, marginTop: 8 };
 const textarea: CSSProperties = { width: "100%", border: "1px solid #d1d5db", borderRadius: 8, padding: 8, resize: "vertical", background: "#fff" };
 const input: CSSProperties = { width: "100%", height: 32, border: "1px solid #d1d5db", borderRadius: 8, padding: "0 8px", background: "#fff" };
-const smallPrimary: CSSProperties = { height: 32, border: "1px solid #111827", borderRadius: 8, background: "#111827", color: "#fff", padding: "0 10px", fontWeight: 950 };
-const smallGhost: CSSProperties = { ...smallPrimary, background: "#fff", color: "#111827", borderColor: "#d1d5db" };
-const badge: CSSProperties = { display: "inline-flex", alignItems: "center", height: 24, borderRadius: 999, background: "#f1f5f9", color: "#475569", padding: "0 8px", fontSize: 12, fontWeight: 950, whiteSpace: "nowrap" };
+const smallPrimary: CSSProperties = { height: 28, border: "1px solid #111827", borderRadius: 7, background: "#111827", color: "#fff", padding: "0 9px", fontSize: 12, fontWeight: 950 };
+const smallGhost: CSSProperties = { ...smallPrimary, background: "#fff", color: "#111827", border: "1px solid #d1d5db" };
+const completeForm: CSSProperties = { display: "inline-flex" };
+const doneAction: CSSProperties = { display: "inline-flex", alignItems: "center", gap: 5, flexWrap: "wrap", justifyContent: "flex-end" };
+const doneInline: CSSProperties = { color: "#166534", fontSize: 12, fontWeight: 950, whiteSpace: "nowrap" };
+const badge: CSSProperties = { display: "inline-flex", alignItems: "center", height: 22, borderRadius: 999, background: "#f1f5f9", color: "#475569", padding: "0 7px", fontSize: 11, fontWeight: 950, whiteSpace: "nowrap" };
 const infoBadge: CSSProperties = { ...badge, background: "#dbeafe", color: "#1d4ed8" };
 const warnBadge: CSSProperties = { ...badge, background: "#fef3c7", color: "#92400e" };
 const holdBadge: CSSProperties = { ...badge, background: "#ede9fe", color: "#6d28d9" };
@@ -970,7 +1017,7 @@ const weekHeaderGrid: CSSProperties = { display: "grid", gridTemplateColumns: "r
 const compactGrid: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))", gap: 4 };
 const compactDay: CSSProperties = { minHeight: 76, border: "1px solid #e5e7eb", borderRadius: 7, padding: 5, display: "grid", alignContent: "start", gap: 4, background: "#fff" };
 const compactMutedDay: CSSProperties = { background: "#f8fafc", color: "#94a3b8" };
-const compactToday: CSSProperties = { borderColor: "#2563eb", boxShadow: "inset 0 0 0 1px #2563eb" };
+const compactToday: CSSProperties = { border: "1px solid #2563eb", boxShadow: "inset 0 0 0 1px #2563eb" };
 const compactDayTop: CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 11 };
 const compactEvents: CSSProperties = { display: "grid", gap: 3, minWidth: 0 };
 const compactEvent: CSSProperties = { display: "block", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRadius: 5, padding: "3px 4px", color: "#fff", fontSize: 10, fontWeight: 900, textDecoration: "none" };

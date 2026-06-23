@@ -21,6 +21,8 @@ export default function AppFrame({ children }: { children: React.ReactNode }) {
 
 const contentStyle: CSSProperties = {
   minHeight: "100vh",
+  minWidth: 0,
+  overflowX: "clip",
   background: "#f3f4f6",
   transition: "margin-left 160ms ease",
 };

@@ -24,6 +24,15 @@ const STUDENT_STATUSES = Object.values(StudentStatus) as StudentStatus[];
 const MEMO_TYPES = Object.values(MemoType) as MemoType[];
 const CLASS_GROUP_STATUSES = Object.values(ClassGroupStatus) as ClassGroupStatus[];
 
+type ClassLessonInput = {
+  id: ReturnType<typeof randomUUID>;
+  position: number;
+  title: string;
+  date: string | null;
+  startTime: string | null;
+  endTime: string | null;
+};
+
 function text(formData: FormData, key: string) {
   const value = formData.get(key);
   return value ? String(value).trim() : "";
@@ -1348,14 +1357,12 @@ export async function updateStudentLessonCells(formData: FormData) {
         if (!cell.value) {
           await tx.scoreRecord.deleteMany({ where: { studentId: cell.studentId, date: cell.date, title: "테스트" } });
         } else {
-          const score = Number(cell.value);
-          if (Number.isNaN(score)) {
-            throw new Error("테스트 점수는 숫자로 입력해 주세요.");
-          }
+          const numericScore = Number(cell.value);
+          const score = Number.isInteger(numericScore) ? numericScore : null;
           await tx.scoreRecord.upsert({
             where: { studentId_date_title: { studentId: cell.studentId, date: cell.date, title: "테스트" } },
-            update: { score, maxScore: 100 },
-            create: { academyId: user.academyId, studentId: cell.studentId, date: cell.date, title: "테스트", score, maxScore: 100 },
+            update: { score, maxScore: 100, memo: cell.value },
+            create: { academyId: user.academyId, studentId: cell.studentId, date: cell.date, title: "테스트", score, maxScore: 100, memo: cell.value },
           });
         }
       }
@@ -1372,6 +1379,90 @@ export async function updateStudentLessonCells(formData: FormData) {
 
   revalidatePath("/students");
   for (const studentId of studentIds) revalidatePath(`/students/${studentId}`);
+}
+
+export async function saveClassLessonConfig(formData: FormData) {
+  const user = await requireUser();
+  const classGroupId = cleanId(text(formData, "classGroupId"));
+  const rawLessons = text(formData, "lessons");
+
+  if (!classGroupId) {
+    throw new Error("차시를 저장할 반을 선택해 주세요.");
+  }
+
+  const classGroup = await prisma.classGroup.findFirst({
+    where: { id: classGroupId, academyId: user.academyId },
+    select: { id: true, teacherId: true },
+  });
+
+  if (!classGroup) {
+    throw new Error("반 정보를 확인해 주세요.");
+  }
+
+  if (user.role === "TEACHER" && classGroup.teacherId !== user.id) {
+    throw new Error("담당 반의 차시만 수정할 수 있습니다.");
+  }
+
+  let parsed: unknown = null;
+  try {
+    parsed = rawLessons ? JSON.parse(rawLessons) : null;
+  } catch {
+    parsed = null;
+  }
+
+  if (!Array.isArray(parsed)) {
+    throw new Error("저장할 차시 정보를 확인해 주세요.");
+  }
+
+  const lessons = parsed
+    .map((item, index): ClassLessonInput | null => {
+      if (!item || typeof item !== "object") return null;
+      const raw = item as { title?: unknown; date?: unknown; startTime?: unknown; endTime?: unknown };
+      const title = String(raw.title ?? "").slice(0, 80);
+      const date = String(raw.date ?? "").trim();
+      const startTime = String(raw.startTime ?? "").trim();
+      const endTime = String(raw.endTime ?? "").trim();
+      if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+      if (startTime && !/^\d{2}:\d{2}$/.test(startTime)) return null;
+      if (endTime && !/^\d{2}:\d{2}$/.test(endTime)) return null;
+      return {
+        id: randomUUID(),
+        position: index + 1,
+        title,
+        date: date || null,
+        startTime: startTime || null,
+        endTime: endTime || null,
+      };
+    })
+    .filter((lesson): lesson is ClassLessonInput => lesson !== null);
+
+  if (lessons.length === 0) {
+    throw new Error("저장할 차시가 없습니다.");
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`DELETE FROM "ClassLesson" WHERE "academyId" = ${user.academyId} AND "classGroupId" = ${classGroupId}`;
+
+    for (const lesson of lessons) {
+      await tx.$executeRaw`
+        INSERT INTO "ClassLesson" ("id", "academyId", "classGroupId", "position", "title", "lessonDate", "startTime", "endTime", "createdAt", "updatedAt")
+        VALUES (${lesson.id}, ${user.academyId}, ${classGroupId}, ${lesson.position}, ${lesson.title}, ${lesson.date}, ${lesson.startTime}, ${lesson.endTime}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      `;
+    }
+  });
+
+  await recordActivity({
+    actor: user,
+    action: "UPDATE",
+    entityType: "ClassGroup",
+    entityId: classGroupId,
+    summary: `차시 설정 저장: ${lessons.length}개`,
+    metadata: { classGroupId, lessonCount: lessons.length },
+  });
+
+  revalidatePath("/students");
+  revalidatePath("/calendar");
+  revalidatePath(`/classes/${classGroupId}`);
 }
 export async function updateScore(formData: FormData) {
   const user = await requireUser();

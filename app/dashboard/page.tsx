@@ -1,4 +1,5 @@
 import { requireUser, roleText } from "@/lib/auth";
+import { effectiveClassStatus, parseClassDaysOfWeek } from "@/lib/classGroups";
 import { todayKoreaDate } from "@/lib/date";
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
@@ -33,6 +34,8 @@ const attendanceText: Record<string, string> = {
 
 export const dynamic = "force-dynamic";
 
+const DASHBOARD_LIST_LIMIT = 5;
+
 export default async function DashboardPage() {
   const user = await requireUser();
   const today = todayKoreaDate();
@@ -50,6 +53,7 @@ export default async function DashboardPage() {
     openTasks,
     staff,
     recentStudents,
+    classGroups,
   ] = await Promise.all([
     prisma.student.count({ where: { academyId: user.academyId } }),
     prisma.student.count({ where: { academyId: user.academyId, status: "ACTIVE" } }),
@@ -88,14 +92,50 @@ export default async function DashboardPage() {
       orderBy: { createdAt: "desc" },
       take: 8,
     }),
+    prisma.classGroup.findMany({
+      where: { academyId: user.academyId },
+      select: {
+        startDate: true,
+        endDate: true,
+        daysOfWeek: true,
+        status: true,
+        lessons: {
+          where: { lessonDate: { not: null } },
+          select: { lessonDate: true },
+        },
+        studentClasses: {
+          where: {
+            status: "ACTIVE",
+            AND: [
+              { OR: [{ joinedAt: null }, { joinedAt: { lte: today } }] },
+              { OR: [{ leftAt: null }, { leftAt: { gte: today } }] },
+            ],
+            student: { status: { in: ["ACTIVE", "WATCH"] } },
+          },
+          select: { studentId: true },
+        },
+      },
+    }),
   ]);
 
-  const attendanceChecked = todayAttendance.length;
-  const presentCount = todayAttendance.filter((record) => record.status === "PRESENT").length;
-  const issueAttendance = todayAttendance.filter((record) => record.status !== "PRESENT");
-  const assignmentChecked = todayAssignments.length;
-  const assignmentDone = todayAssignments.filter((record) => record.status === "DONE").length;
-  const assignmentIssues = todayAssignments.filter((record) => record.status === "PARTIAL" || record.status === "MISSING");
+  const todayStudentIds = new Set<string>();
+  for (const classGroup of classGroups) {
+    if (!isClassOnDate(classGroup, today)) continue;
+    for (const membership of classGroup.studentClasses) {
+      todayStudentIds.add(membership.studentId);
+    }
+  }
+
+  const todayTargetStudentCount = todayStudentIds.size;
+  const todayClassAttendance = todayAttendance.filter((record) => todayStudentIds.has(record.studentId));
+  const todayClassAssignments = todayAssignments.filter((record) => todayStudentIds.has(record.studentId));
+
+  const attendanceChecked = todayClassAttendance.length;
+  const presentCount = todayClassAttendance.filter((record) => record.status === "PRESENT").length;
+  const issueAttendance = todayClassAttendance.filter((record) => record.status !== "PRESENT");
+  const assignmentChecked = todayClassAssignments.length;
+  const assignmentDone = todayClassAssignments.filter((record) => record.status === "DONE").length;
+  const assignmentIssues = todayClassAssignments.filter((record) => record.status === "PARTIAL" || record.status === "MISSING");
 
   const managers = staff.filter((member) => member.role === "ADMIN" || member.role === "MANAGER");
   const teachers = staff.filter((member) => member.role === "TEACHER");
@@ -120,8 +160,8 @@ export default async function DashboardPage() {
         <div style={stats}>
           <Stat href="/students" label="전체 학생" value={`${totalStudents}명`} note={`재원 ${activeStudents}명`} />
           <Stat href="/students?sort=name" label="주의 학생" value={`${watchStudents}명`} note={`휴원 ${pausedStudents}명 · 퇴원 ${leftStudents}명`} tone="warn" />
-          <Stat href={`/students?date=${today}&tab=attendance`} label="오늘 출석 체크" value={`${attendanceChecked}/${totalStudents}`} note={`현장 ${presentCount}명`} />
-          <Stat href={`/students?date=${today}&tab=assignment`} label="오늘 과제 체크" value={`${assignmentChecked}/${totalStudents}`} note={`완료 ${assignmentDone}명`} />
+          <Stat href={`/students?date=${today}&tab=attendance`} label="오늘 출석 체크" value={`${attendanceChecked}/${todayTargetStudentCount}`} note={`현장 ${presentCount}명`} />
+          <Stat href={`/students?date=${today}&tab=assignment`} label="오늘 과제 체크" value={`${assignmentChecked}/${todayTargetStudentCount}`} note={`완료 ${assignmentDone}명`} />
           <Stat href="/tasks" label="미완료 업무" value={`${openTaskCount}개`} note="대기·진행·보류" tone="task" />
         </div>
 
@@ -164,7 +204,7 @@ export default async function DashboardPage() {
           </Panel>
 
           <Panel title="업무 현황" href="/tasks" empty={openTasks.length === 0} emptyText="미완료 업무가 없습니다.">
-            {openTasks.map((task) => (
+            {openTasks.slice(0, DASHBOARD_LIST_LIMIT).map((task) => (
               <LineItem
                 key={task.id}
                 href={`/tasks/${task.id}`}
@@ -173,6 +213,7 @@ export default async function DashboardPage() {
                 tone={task.priority === "URGENT" || task.priority === "HIGH" ? "danger" : "task"}
               />
             ))}
+            {openTaskCount > DASHBOARD_LIST_LIMIT && <MoreRow href="/tasks" count={openTaskCount - DASHBOARD_LIST_LIMIT} label="업무" />}
           </Panel>
 
           <Panel title="직원/계정" href="/users" empty={staff.length === 0} emptyText="활성 계정이 없습니다.">
@@ -181,9 +222,10 @@ export default async function DashboardPage() {
               <RoleBadge label="강사" value={teachers.length} />
               <RoleBadge label="조교" value={assistants.length} />
             </div>
-            {staff.slice(0, 8).map((member) => (
+            {staff.slice(0, DASHBOARD_LIST_LIMIT).map((member) => (
               <LineItem key={member.id} href="/users" title={member.name} meta={`${roleText(member.role)} · ${member.loginId}`} />
             ))}
+            {staff.length > DASHBOARD_LIST_LIMIT && <MoreRow href="/users" count={staff.length - DASHBOARD_LIST_LIMIT} label="계정" />}
           </Panel>
         </div>
 
@@ -289,8 +331,49 @@ function RoleBadge({ label, value }: { label: string; value: number }) {
   );
 }
 
-const page: CSSProperties = { padding: 28, color: "#111827" };
-const container: CSSProperties = { maxWidth: 1440, margin: "0 auto" };
+function isClassOnDate(
+  classGroup: {
+    startDate: string | null;
+    endDate: string | null;
+    daysOfWeek: string | null;
+    status: string | null;
+    lessons: Array<{ lessonDate: string | null }>;
+  },
+  date: string
+) {
+  if (effectiveClassStatus(classGroup, date) !== "ACTIVE") return false;
+
+  const savedLessons = classGroup.lessons.filter((lesson) => lesson.lessonDate);
+  if (savedLessons.length > 0) {
+    return savedLessons.some((lesson) => lesson.lessonDate === date);
+  }
+
+  const dateValue = dateFromYmd(date);
+  if (!dateValue) return false;
+  if (classGroup.startDate && date < classGroup.startDate) return false;
+  if (classGroup.endDate && date > classGroup.endDate) return false;
+
+  const daysOfWeek = parseClassDaysOfWeek(classGroup.daysOfWeek);
+  return daysOfWeek.includes(dateValue.getDay());
+}
+
+function dateFromYmd(value: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return null;
+  const [, year, month, day] = match;
+  return new Date(Number(year), Number(month) - 1, Number(day));
+}
+
+function MoreRow({ href, count, label }: { href: string; count: number; label: string }) {
+  return (
+    <Link href={href} style={moreRow}>
+      +{count}개 {label} 더 보기
+    </Link>
+  );
+}
+
+const page: CSSProperties = { padding: 16, color: "#111827" };
+const container: CSSProperties = { width: "100%", maxWidth: "none", margin: 0 };
 const header: CSSProperties = { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 18, marginBottom: 18 };
 const title: CSSProperties = { fontSize: 34, fontWeight: 950, margin: "0 0 8px" };
 const desc: CSSProperties = { margin: 0, color: "#6b7280" };
@@ -302,7 +385,7 @@ const statCard: CSSProperties = { background: "#fff", border: "1px solid #e5e7eb
 const warnCard: CSSProperties = { borderColor: "#fde68a", background: "#fffbeb" };
 const taskCard: CSSProperties = { borderColor: "#bfdbfe", background: "#eff6ff" };
 const statLabel: CSSProperties = { color: "#6b7280", fontWeight: 900 };
-const statValue: CSSProperties = { fontSize: 28, lineHeight: 1 };
+const statValue: CSSProperties = { fontSize: 24, lineHeight: 1 };
 const statNote: CSSProperties = { color: "#4b5563", fontWeight: 800 };
 const mainGrid: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 14, marginBottom: 16 };
 const panel: CSSProperties = { background: "#fff", border: "1px solid #e5e7eb", borderRadius: 8, padding: 16, minHeight: 320 };
@@ -318,6 +401,7 @@ const warnDot: CSSProperties = { background: "#f59e0b" };
 const dangerDot: CSSProperties = { background: "#dc2626" };
 const taskDot: CSSProperties = { background: "#2563eb" };
 const lineText: CSSProperties = { display: "flex", flexDirection: "column", gap: 4, minWidth: 0 };
+const moreRow: CSSProperties = { display: "block", marginTop: 2, padding: "9px 10px", borderRadius: 8, background: "#f8fafc", color: "#2563eb", textDecoration: "none", fontWeight: 950, textAlign: "center", border: "1px solid #e5e7eb" };
 const emptyStyle: CSSProperties = { margin: 0, color: "#6b7280", fontWeight: 800 };
 const roleSummary: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 8 };
 const roleBadge: CSSProperties = { display: "flex", flexDirection: "column", gap: 4, border: "1px solid #e5e7eb", borderRadius: 8, padding: 10, fontSize: 12, color: "#4b5563" };

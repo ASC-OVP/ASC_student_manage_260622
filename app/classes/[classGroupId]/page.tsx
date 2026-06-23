@@ -446,11 +446,11 @@ function daysAgo(days: number) {
   return date.toISOString().slice(0, 10);
 }
 
-const page: CSSProperties = { padding: 24, background: "#f8fafc", color: "#111827", minHeight: "100vh" };
+const page: CSSProperties = { padding: 14, background: "#f8fafc", color: "#111827", minHeight: "100vh" };
 const container: CSSProperties = { display: "flex", flexDirection: "column", gap: 14 };
 const header: CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 16, background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, padding: 18 };
 const backLink: CSSProperties = { color: "#2563eb", fontWeight: 950, textDecoration: "none", fontSize: 13 };
-const title: CSSProperties = { margin: "6px 0", fontSize: 30, fontWeight: 950 };
+const title: CSSProperties = { margin: "6px 0", fontSize: 25, fontWeight: 950 };
 const desc: CSSProperties = { margin: 0, color: "#6b7280", fontWeight: 750 };
 const headerActions: CSSProperties = { display: "flex", alignItems: "center", gap: 8 };
 const primaryButton: CSSProperties = { border: 0, borderRadius: 8, background: "#111827", color: "#fff", padding: "9px 12px", fontWeight: 950, textDecoration: "none", cursor: "pointer" };

@@ -13,7 +13,7 @@ const TASK_PRIORITIES = Object.values(TaskPriority) as TaskPriority[];
 const TASK_TYPES = Object.values(TaskType) as TaskType[];
 const RECURRENCE_TYPES = ["DAILY", "WEEKLY", "MONTHLY"] as const;
 const SIMPLE_TASK_STATUSES: TaskStatus[] = [TaskStatus.TODO, TaskStatus.IN_PROGRESS, TaskStatus.DONE, TaskStatus.HOLD];
-const ASSISTANT_CHANGE_STATUSES: TaskStatus[] = [TaskStatus.IN_PROGRESS, TaskStatus.DONE, TaskStatus.HOLD];
+const ASSISTANT_CHANGE_STATUSES: TaskStatus[] = [TaskStatus.TODO, TaskStatus.IN_PROGRESS, TaskStatus.DONE, TaskStatus.HOLD];
 const REVIEWABLE_TASK_STATUSES: TaskStatus[] = [TaskStatus.SUBMITTED, TaskStatus.REVIEW];
 
 function text(formData: FormData, key: string) {
@@ -489,7 +489,9 @@ export async function updateTaskStatus(formData: FormData) {
       data: {
         status: nextStatus,
         completedAt: nextStatus === TaskStatus.DONE ? new Date() : null,
-        actualMinutes: nextStatus === TaskStatus.DONE ? numberOrUndefined(optionalText(formData, "actualMinutes")) : undefined,
+        submittedAt: nextStatus === TaskStatus.DONE ? undefined : null,
+        actualMinutes: nextStatus === TaskStatus.DONE ? numberOrUndefined(optionalText(formData, "actualMinutes")) : null,
+        evidenceSummary: nextStatus === TaskStatus.DONE ? undefined : null,
       },
     });
     await addHistory(tx, {

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
-import { saveCalendarPrivateMemoAction } from "@/app/calendar/actions";
+import { saveCalendarEventMemoAction, saveCalendarPrivateMemoAction } from "@/app/calendar/actions";
 
 type CalendarEventType = "class" | "task";
 type ViewMode = "month" | "week" | "day";
@@ -62,6 +62,15 @@ type Props = {
   subjects: FilterOption[];
   statuses: FilterOption[];
   privateMemos?: Array<{ date: string; content: string }>;
+  eventMemos?: CalendarEventMemoView[];
+};
+
+type CalendarEventMemoView = {
+  eventKey: string;
+  eventDate: string;
+  content: string;
+  updatedAt: string;
+  writerName: string | null;
 };
 
 type MaterializedEvent = {
@@ -75,13 +84,15 @@ type MaterializedEvent = {
 };
 
 type SelectedEvent = {
+  eventKey: string;
+  dateKey: string;
   title: string;
   startText: string;
   endText: string;
   props: CalendarExtendedProps;
 };
 
-export default function AcademyCalendar({ events, teachers, assistants, classGroups, subjects, statuses, privateMemos = [] }: Props) {
+export default function AcademyCalendar({ events, teachers, assistants, classGroups, subjects, statuses, privateMemos = [], eventMemos = [] }: Props) {
   const [kind, setKind] = useState("all");
   const [teacherId, setTeacherId] = useState("all");
   const [assistantId, setAssistantId] = useState("all");
@@ -93,6 +104,7 @@ export default function AcademyCalendar({ events, teachers, assistants, classGro
   const [selected, setSelected] = useState<SelectedEvent | null>(null);
   const [clickedDate, setClickedDate] = useState<string | null>(null);
   const memoByDate = useMemo(() => new Map(privateMemos.map((memo) => [memo.date, memo.content])), [privateMemos]);
+  const eventMemoByKey = useMemo(() => new Map(eventMemos.map((memo) => [memo.eventKey, memo])), [eventMemos]);
 
   const filteredEvents = useMemo(() => {
     return events.filter((event) => {
@@ -139,6 +151,8 @@ export default function AcademyCalendar({ events, teachers, assistants, classGro
 
   function openEvent(event: MaterializedEvent) {
     setSelected({
+      eventKey: event.id,
+      dateKey: event.dateKey,
       title: event.title,
       startText: event.startText,
       endText: event.endText,
@@ -263,8 +277,11 @@ export default function AcademyCalendar({ events, teachers, assistants, classGro
                               openEvent(event);
                             }
                           }}
-                        >
-                          <small>{event.startText}</small>
+                      >
+                          <span style={eventPillMeta}>
+                            <small>{event.startText}</small>
+                            {eventMemoByKey.has(event.id) && <i style={eventMemoDot} aria-label="일정 메모" />}
+                          </span>
                           <b>{event.title}</b>
                         </span>
                       ))
@@ -277,7 +294,17 @@ export default function AcademyCalendar({ events, teachers, assistants, classGro
         </div>
 
         <aside style={sidePanel}>
-          {selected ? <EventDetail selected={selected} /> : clickedDate ? <DateQuickAdd date={clickedDate} memo={memoByDate.get(clickedDate) ?? ""} /> : <EmptyDetail />}
+          {selected ? (
+            <EventDetail
+              key={`${selected.eventKey}:${eventMemoByKey.get(selected.eventKey)?.updatedAt ?? "empty"}`}
+              selected={selected}
+              memo={eventMemoByKey.get(selected.eventKey)}
+            />
+          ) : clickedDate ? (
+            <DateQuickAdd date={clickedDate} memo={memoByDate.get(clickedDate) ?? ""} />
+          ) : (
+            <EmptyDetail />
+          )}
         </aside>
       </section>
     </div>
@@ -301,7 +328,7 @@ function Legend({ color, children }: { color: string; children: ReactNode }) {
   );
 }
 
-function EventDetail({ selected }: { selected: SelectedEvent }) {
+function EventDetail({ selected, memo }: { selected: SelectedEvent; memo?: CalendarEventMemoView }) {
   const { props } = selected;
   const isClass = props.type === "class";
 
@@ -333,6 +360,24 @@ function EventDetail({ selected }: { selected: SelectedEvent }) {
         )}
       </div>
       {props.description && <p style={description}>{props.description}</p>}
+      <form action={saveCalendarEventMemoAction} style={memoForm}>
+        <input type="hidden" name="eventKey" value={selected.eventKey} />
+        <input type="hidden" name="eventDate" value={selected.dateKey} />
+        <input type="hidden" name="eventType" value={props.type} />
+        <input type="hidden" name="title" value={selected.title} />
+        <label style={memoLabel}>
+          캘린더 메모
+          <textarea
+            key={memo?.updatedAt ?? selected.eventKey}
+            name="content"
+            rows={4}
+            defaultValue={memo?.content ?? ""}
+            style={memoTextarea}
+          />
+        </label>
+        {memo?.writerName && <small style={memoMeta}>마지막 수정: {memo.writerName}</small>}
+        <button style={primaryButton}>메모 저장</button>
+      </form>
       <div style={detailActions}>
         {isClass ? (
           <>
@@ -430,8 +475,8 @@ function materializeEvents(events: AcademyCalendarEvent[], days: Date[]) {
         id: `${event.id}-${isoDate(day)}`,
         title: event.title,
         dateKey: isoDate(day),
-        startText: props.type === "task" ? "기간" : "",
-        endText: "",
+        startText: props.type === "task" ? "기간" : event.startTime || "",
+        endText: props.type === "task" ? "" : event.endTime || "",
         color,
         props,
       });
@@ -631,6 +676,8 @@ const eventPill: CSSProperties = {
   boxShadow: "0 1px 2px rgba(15,23,42,.16)",
   cursor: "pointer",
 };
+const eventPillMeta: CSSProperties = { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 };
+const eventMemoDot: CSSProperties = { width: 6, height: 6, borderRadius: 999, background: "#facc15", boxShadow: "0 0 0 1px rgba(15,23,42,.2)" };
 const noEvent: CSSProperties = { color: "#cbd5e1", fontSize: 12, fontWeight: 850 };
 const sidePanel: CSSProperties = { position: "sticky", top: 12 };
 const detailCard: CSSProperties = { border: "1px solid #dfe3ea", borderRadius: 10, background: "#fff", padding: 14, display: "grid", gap: 12 };
@@ -646,4 +693,5 @@ const primaryButton: CSSProperties = { border: "1px solid #111827", background: 
 const memoForm: CSSProperties = { display: "grid", gap: 8 };
 const memoLabel: CSSProperties = { display: "grid", gap: 6, fontSize: 13, fontWeight: 950 };
 const memoTextarea: CSSProperties = { width: "100%", border: "1px solid #d1d5db", borderRadius: 7, padding: 9, resize: "vertical", font: "inherit", color: "#111827" };
+const memoMeta: CSSProperties = { color: "#6b7280", fontSize: 11, fontWeight: 850 };
 const badge: CSSProperties = { display: "inline-flex", alignItems: "center", borderRadius: 999, background: "#f1f5f9", color: "#475569", padding: "4px 8px", fontSize: 12, fontWeight: 950 };

@@ -1,24 +1,24 @@
 import type { CSSProperties } from "react";
 
 export const page: CSSProperties = {
-  padding: 32,
+  padding: 16,
   color: "#111827",
 };
 
 export const container: CSSProperties = {
   width: "100%",
-  maxWidth: 1200,
-  margin: "0 auto",
+  maxWidth: "none",
+  margin: 0,
 };
 
 export const narrowContainer: CSSProperties = {
   width: "100%",
-  maxWidth: 760,
-  margin: "0 auto",
+  maxWidth: "none",
+  margin: 0,
 };
 
 export const title: CSSProperties = {
-  fontSize: 32,
+  fontSize: 26,
   fontWeight: 900,
   margin: "0 0 8px",
 };
@@ -32,7 +32,7 @@ export const card: CSSProperties = {
   background: "#ffffff",
   border: "1px solid #e5e7eb",
   borderRadius: 18,
-  padding: 24,
+  padding: 14,
   boxShadow: "0 8px 20px rgba(15,23,42,.06)",
 };
 

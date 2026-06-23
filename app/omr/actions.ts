@@ -54,6 +54,13 @@ function cleanId(value?: string | null) {
   return trimmed && trimmed !== "none" && trimmed !== "-" ? trimmed : undefined;
 }
 
+function safeReturnTo(value?: string | null) {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed.startsWith("/") || trimmed.startsWith("//")) return null;
+  return trimmed;
+}
+
 function enumValue<T extends string>(value: string | undefined, values: readonly T[], fallback: T) {
   return value && values.includes(value as T) ? (value as T) : fallback;
 }
@@ -313,7 +320,9 @@ export async function uploadOmrAction(formData: FormData) {
 
   if (!exam) return;
 
-  const totalUploadBytes = files.reduce((sum, file) => sum + file.size, 0);
+  const totalUploadBytes = files
+    .filter((file) => file.size <= OMR_MAX_FILE_BYTES)
+    .reduce((sum, file) => sum + file.size, 0);
   if (totalUploadBytes > OMR_MAX_BATCH_BYTES) {
     redirect(omrHref(exam.id, { mode: "upload", uploadError: "batch-too-large" }));
   }
@@ -409,6 +418,7 @@ export async function uploadOmrAction(formData: FormData) {
 export async function updateOmrUploadMatchAction(formData: FormData) {
   const user = await requireUser();
   const uploadId = text(formData, "uploadId");
+  const returnTo = safeReturnTo(text(formData, "returnTo"));
   if (!uploadId) return;
 
   const upload = await prisma.omrUpload.findFirst({
@@ -438,12 +448,14 @@ export async function updateOmrUploadMatchAction(formData: FormData) {
   `;
 
   revalidatePath("/omr");
-  redirect(upload.examId ? `/omr?examId=${upload.examId}&mode=results&uploadId=${upload.id}` : `/omr?uploadId=${upload.id}`);
+  if (returnTo) revalidatePath(returnTo);
+  redirect(returnTo ?? `/omr/uploads/${upload.id}`);
 }
 
 export async function updateOmrUploadSetupAction(formData: FormData) {
   const user = await requireUser();
   const uploadId = text(formData, "uploadId");
+  const returnTo = safeReturnTo(text(formData, "returnTo"));
   if (!uploadId) return;
 
   const upload = await prisma.omrUpload.findFirst({
@@ -470,9 +482,9 @@ export async function updateOmrUploadSetupAction(formData: FormData) {
     },
   });
 
-  const redirectExamId = nextExam?.id ?? upload.examId;
   revalidatePath("/omr");
-  redirect(redirectExamId ? `/omr?examId=${redirectExamId}&mode=results&uploadId=${upload.id}` : `/omr?uploadId=${upload.id}`);
+  if (returnTo) revalidatePath(returnTo);
+  redirect(returnTo ?? `/omr/uploads/${upload.id}`);
 }
 
 export async function deleteOmrUploadAction(formData: FormData) {
@@ -694,7 +706,7 @@ export async function recognizeOmrAction(formData: FormData) {
   });
 
   revalidatePath("/omr");
-  redirect(result.examId ? `/omr?examId=${result.examId}&mode=results&uploadId=${result.uploadId}` : "/omr");
+  redirect(result.uploadId ? `/omr/uploads/${result.uploadId}` : result.examId ? omrHref(result.examId, { mode: "results" }) : "/omr");
 }
 
 export async function recognizeSelectedOmrUploadsAction(formData: FormData) {
@@ -747,6 +759,7 @@ export async function recognizeSelectedOmrUploadsAction(formData: FormData) {
 export async function saveOmrCorrectionsAction(formData: FormData) {
   const user = await requireUser();
   const uploadId = text(formData, "uploadId");
+  const returnTo = safeReturnTo(text(formData, "returnTo"));
   if (!uploadId) return;
 
   const upload = await prisma.omrUpload.findFirst({
@@ -805,11 +818,13 @@ export async function saveOmrCorrectionsAction(formData: FormData) {
   });
 
   revalidatePath("/omr");
-  redirect(`/omr?examId=${upload.examId}&mode=results&uploadId=${uploadId}`);
+  if (returnTo) revalidatePath(returnTo);
+  redirect(returnTo ?? `/omr/uploads/${uploadId}`);
 }
 export async function gradeOmrAction(formData: FormData) {
   const user = await requireUser();
   const uploadId = text(formData, "uploadId");
+  const returnTo = safeReturnTo(text(formData, "returnTo"));
   if (!uploadId) return;
 
   const result = await gradeOmrUploadInternal(uploadId, user.academyId, formData);
@@ -837,7 +852,8 @@ export async function gradeOmrAction(formData: FormData) {
   revalidatePath("/omr");
   revalidatePath("/students");
   revalidatePath(`/students/${result.studentId}`);
-  redirect(`/omr?examId=${result.examId}&mode=results&uploadId=${uploadId}`);
+  if (returnTo) revalidatePath(returnTo);
+  redirect(returnTo ?? `/omr/uploads/${uploadId}`);
 }
 
 export async function gradeSelectedOmrUploadsAction(formData: FormData) {
@@ -1035,7 +1051,7 @@ async function gradeOmrUploadInternal(uploadId: string, academyId: string, formD
       update: {
         score: totalScore,
         maxScore: maxScore || exam.questionCount,
-        memo: `OMR grading ${correctCount}/${exam.questionCount}, review ${reviewNeededCount}`,
+        memo: null,
       },
       create: {
         academyId,
@@ -1044,7 +1060,7 @@ async function gradeOmrUploadInternal(uploadId: string, academyId: string, formD
         title: scoreTitle,
         score: totalScore,
         maxScore: maxScore || exam.questionCount,
-        memo: `OMR grading ${correctCount}/${exam.questionCount}, review ${reviewNeededCount}`,
+        memo: null,
       },
     });
 

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import type { CSSProperties, ReactNode } from "react";
 import OmrCloseButton from "@/components/OmrCloseButton";
 import OmrExamDeleteButton from "@/components/OmrExamDeleteButton";
@@ -117,6 +118,8 @@ export const dynamic = "force-dynamic";
 export default async function OmrPage({ searchParams }: Props) {
   const user = await requireUser();
   const sp = await searchParams;
+  if (sp.uploadId) redirect(`/omr/uploads/${sp.uploadId}`);
+
   const canManageExam = user.role === "ADMIN" || user.role === "MANAGER" || user.role === "TEACHER";
   const q = sp.q?.trim() ?? "";
   const dateFilter = sp.date ?? "";
@@ -292,6 +295,9 @@ export default async function OmrPage({ searchParams }: Props) {
                         <Link href={`/omr?examId=${record.id}&mode=answers`} style={resultButton}>정답</Link>
                         <Link href={`/omr?examId=${record.id}&mode=upload`} style={resultButton}>업로드</Link>
                         <Link href={`/omr?examId=${record.id}&mode=results`} style={resultButton}>학생</Link>
+                        {record.firstReviewUploadId && (
+                          <Link href={`/omr/uploads/${record.firstReviewUploadId}`} style={resultButton}>답안 확인</Link>
+                        )}
                         <form action={deleteExamAction} style={inlineDeleteForm}>
                           <input type="hidden" name="examId" value={record.id} />
                           <OmrExamDeleteButton examTitle={record.title} totalFiles={record.totalFiles} />
@@ -509,7 +515,7 @@ function ExamDetail({
                     </Td>
                     <Td>
                       {upload.student ? (
-                        <Link href={`/omr?examId=${exam.id}&mode=results&uploadId=${upload.id}`} style={resultButton}>
+                        <Link href={`/omr/uploads/${upload.id}`} style={resultButton}>
                           {studentLabel(upload.student)}
                         </Link>
                       ) : (
@@ -525,7 +531,7 @@ function ExamDetail({
                     <Td>{result?.blankCount ?? "-"}</Td>
                     <Td>{reviewNeededCount}</Td>
                     <Td><StatusBadge tone={result ? "green" : canRegister ? "yellow" : "gray"}>{result ? "등록 완료" : canRegister ? "등록 가능" : "대기"}</StatusBadge></Td>
-                    <Td><Link href={`/omr?examId=${exam.id}&mode=results&uploadId=${upload.id}`} style={resultButton}>답안 확인</Link></Td>
+                    <Td><Link href={`/omr/uploads/${upload.id}`} style={resultButton}>답안 확인</Link></Td>
                     <Td>
                       <form action={deleteOmrUploadAction}>
                         <input type="hidden" name="uploadId" value={upload.id} />
@@ -578,7 +584,6 @@ function UploadReview({
       recognized?.status === OmrAnswerStatus.REVIEW_NEEDED ||
       recognized?.status === OmrAnswerStatus.MULTIPLE
     );
-  const examId = upload.examId ?? upload.exam?.id ?? "";
   const currentIndex = reviewUploads.findIndex((item) => item.id === upload.id);
   const previousUpload = currentIndex > 0 ? reviewUploads[currentIndex - 1] : null;
   const nextUpload = currentIndex >= 0 && currentIndex < reviewUploads.length - 1 ? reviewUploads[currentIndex + 1] : null;
@@ -592,19 +597,19 @@ function UploadReview({
         </div>
         <div style={studentNavButtons}>
           {previousUpload ? (
-            <Link href={reviewUploadHref(examId, previousUpload.id)} style={secondaryButton}>이전</Link>
+            <Link href={reviewUploadHref(previousUpload.id)} style={secondaryButton}>이전</Link>
           ) : (
             <span style={disabledNav}>이전</span>
           )}
           {nextUpload ? (
-            <Link href={reviewUploadHref(examId, nextUpload.id)} style={secondaryButton}>다음</Link>
+            <Link href={reviewUploadHref(nextUpload.id)} style={secondaryButton}>다음</Link>
           ) : (
             <span style={disabledNav}>다음</span>
           )}
         </div>
         <div style={reviewStudentList}>
           {reviewUploads.map((item) => (
-            <ReviewStudentItem key={item.id} upload={item} selected={item.id === upload.id} examId={examId} />
+            <ReviewStudentItem key={item.id} upload={item} selected={item.id === upload.id} />
           ))}
         </div>
       </aside>
@@ -728,7 +733,7 @@ function UploadReview({
   );
 }
 
-function ReviewStudentItem({ upload, selected, examId }: { upload: ExamUploadLite; selected: boolean; examId: string }) {
+function ReviewStudentItem({ upload, selected }: { upload: ExamUploadLite; selected: boolean }) {
   const result = upload.results[0];
   const needsReview =
     upload.recognizeStatus === "REVIEW_NEEDED" ||
@@ -737,7 +742,7 @@ function ReviewStudentItem({ upload, selected, examId }: { upload: ExamUploadLit
 
   return (
     <Link
-      href={reviewUploadHref(examId, upload.id)}
+      href={reviewUploadHref(upload.id)}
       style={{ ...reviewStudentItem, ...(selected ? reviewStudentSelected : {}), ...(needsReview ? reviewStudentNeedsReview : {}) }}
     >
       <div style={reviewStudentName}>{upload.student?.name ?? "학생 매칭 필요"}</div>
@@ -747,8 +752,8 @@ function ReviewStudentItem({ upload, selected, examId }: { upload: ExamUploadLit
   );
 }
 
-function reviewUploadHref(examId: string, uploadId: string) {
-  return `/omr?examId=${examId}&mode=results&uploadId=${uploadId}`;
+function reviewUploadHref(uploadId: string) {
+  return `/omr/uploads/${uploadId}`;
 }
 
 function closeUploadHrefFor(upload: Pick<SelectedUpload, "examId">) {
@@ -842,7 +847,7 @@ function QuestionRow({
               <option key={value} value={value}>{label}</option>
             ))}
           </select>
-          <input name={`score-${question.no}`} type="hidden" value={answerKey?.score ?? resultItem?.score ?? 1} />
+          <input name={`score-${question.no}`} type="hidden" value={answerKey?.score ?? 1} />
         </Td>
       </tr>
     );
@@ -959,6 +964,12 @@ function makeExamRecord(exam: ExamWithUploads, classGroupById: Map<string, Class
   const lowScore = scores.length ? Math.min(...scores) : null;
   const failedCount = uploads.filter((upload) => upload.recognizeStatus === "FAILED").length;
   const status = batchStatus({ totalFiles, matchedCount, reviewNeededCount, gradedCount: gradedUploads.length, failedCount });
+  const firstReviewUpload =
+    uploads.find((upload) => uploadNeedsReview(upload)) ??
+    uploads.find((upload) => !upload.studentId) ??
+    uploads.find((upload) => upload.results.length > 0) ??
+    uploads[0] ??
+    null;
 
   return {
     id: exam.id,
@@ -980,7 +991,18 @@ function makeExamRecord(exam: ExamWithUploads, classGroupById: Map<string, Class
     highScore,
     lowScore,
     status,
+    firstReviewUploadId: firstReviewUpload?.id ?? "",
   };
+}
+
+function uploadNeedsReview(upload: ExamUploadLite) {
+  return (
+    upload.recognizeStatus === "REVIEW_NEEDED" ||
+    upload.recognizeStatus === "FAILED" ||
+    (upload.recognizedAnswers as Array<{ status: OmrAnswerStatus }>).some(
+      (answer) => answer.status === OmrAnswerStatus.REVIEW_NEEDED || answer.status === OmrAnswerStatus.MULTIPLE
+    )
+  );
 }
 
 function batchStatus(stats: { totalFiles: number; matchedCount: number; reviewNeededCount: number; gradedCount: number; failedCount: number }) {
@@ -1111,12 +1133,12 @@ function studentLabel(student: StudentOption | StudentBrief) {
 }
 
 const page: CSSProperties = { minHeight: "100vh", background: "#f3f4f6", color: "#111827" };
-const container: CSSProperties = { maxWidth: 1480, margin: "0 auto", padding: 18, display: "flex", flexDirection: "column", gap: 12 };
+const container: CSSProperties = { width: "100%", maxWidth: "none", margin: 0, padding: 14, display: "flex", flexDirection: "column", gap: 10 };
 const topBar: CSSProperties = { display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, padding: 16 };
 const errorNotice: CSSProperties = { border: "1px solid #fecaca", borderRadius: 10, background: "#fef2f2", color: "#991b1b", padding: "10px 12px", fontSize: 13, fontWeight: 800 };
 const warningNotice: CSSProperties = { border: "1px solid #fde68a", borderRadius: 10, background: "#fffbeb", color: "#92400e", padding: "10px 12px", fontSize: 13, fontWeight: 800 };
 const eyebrow: CSSProperties = { margin: 0, color: "#2563eb", fontSize: 12, fontWeight: 950 };
-const title: CSSProperties = { margin: "3px 0", fontSize: 28, fontWeight: 950 };
+const title: CSSProperties = { margin: "3px 0", fontSize: 25, fontWeight: 950 };
 const desc: CSSProperties = { margin: 0, color: "#6b7280" };
 const newButton: CSSProperties = { background: "#111827", color: "#fff", borderRadius: 8, padding: "10px 14px", textDecoration: "none", fontWeight: 950, whiteSpace: "nowrap" };
 const filterBar: CSSProperties = { display: "grid", gridTemplateColumns: "minmax(220px, 1fr) 150px 150px 150px 150px 100px auto auto", gap: 8, background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, padding: 10 };
@@ -1166,7 +1188,7 @@ const sheetTitle: CSSProperties = { margin: "0 0 10px", fontSize: 16, fontWeight
 const stack: CSSProperties = { display: "grid", gap: 9 };
 const input: CSSProperties = { width: "100%", boxSizing: "border-box", border: "1px solid #d1d5db", borderRadius: 7, padding: "9px 10px", minWidth: 0 };
 const twoCols: CSSProperties = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 };
-const studentReviewGrid: CSSProperties = { display: "grid", gridTemplateColumns: "250px minmax(420px, 1fr) minmax(540px, 1fr)", gap: 12, alignItems: "stretch", minHeight: "calc(100vh - 100px)" };
+const studentReviewGrid: CSSProperties = { display: "grid", gridTemplateColumns: "220px minmax(320px, .9fr) minmax(360px, 1.1fr)", gap: 10, alignItems: "stretch", minHeight: "calc(100vh - 100px)" };
 const reviewStudentPane: CSSProperties = { ...card, display: "grid", gridTemplateRows: "auto auto 1fr", minHeight: 0 };
 const reviewPreviewPane: CSSProperties = { ...card, minWidth: 0, minHeight: 0 };
 const reviewAnswerPane: CSSProperties = { display: "grid", gridTemplateRows: "auto auto 1fr", gap: 10, minWidth: 0, minHeight: 0 };

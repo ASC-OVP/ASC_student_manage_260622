@@ -208,11 +208,11 @@ function formatDateTime(value: string | Date) {
   }).format(date);
 }
 
-const page: CSSProperties = { padding: 28, color: "#111827" };
-const container: CSSProperties = { maxWidth: 1440, margin: "0 auto", display: "flex", flexDirection: "column", gap: 14 };
-const hero: CSSProperties = { display: "flex", justifyContent: "space-between", gap: 16, alignItems: "stretch", background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, padding: 20 };
+const page: CSSProperties = { padding: 16, color: "#111827" };
+const container: CSSProperties = { width: "100%", maxWidth: "none", margin: 0, display: "flex", flexDirection: "column", gap: 14 };
+const hero: CSSProperties = { display: "flex", justifyContent: "space-between", gap: 12, alignItems: "stretch", background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, padding: 14 };
 const eyebrow: CSSProperties = { margin: 0, color: "#2563eb", fontWeight: 950, fontSize: 12 };
-const title: CSSProperties = { margin: "6px 0", fontSize: 30, fontWeight: 950 };
+const title: CSSProperties = { margin: "6px 0", fontSize: 25, fontWeight: 950 };
 const desc: CSSProperties = { margin: 0, color: "#6b7280", lineHeight: 1.6 };
 const roleCard: CSSProperties = { minWidth: 180, border: "1px solid #e5e7eb", borderRadius: 8, padding: 14, display: "flex", flexDirection: "column", justifyContent: "center", gap: 5, background: "#f9fafb" };
 const statsGrid: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(5, minmax(140px, 1fr))", gap: 10 };
@@ -235,5 +235,5 @@ const logTableWrap: CSSProperties = { overflow: "auto", border: "1px solid #e5e7
 const table: CSSProperties = { width: "100%", borderCollapse: "collapse", fontSize: 13 };
 const th: CSSProperties = { textAlign: "left", background: "#f3f4f6", padding: "10px 11px", borderBottom: "1px solid #e5e7eb", whiteSpace: "nowrap" };
 const td: CSSProperties = { padding: "10px 11px", borderBottom: "1px solid #f3f4f6", verticalAlign: "top" };
-const emptyTd: CSSProperties = { ...td, textAlign: "center", color: "#6b7280", padding: 28 };
+const emptyTd: CSSProperties = { ...td, textAlign: "center", color: "#6b7280", padding: 18 };
 const badge: CSSProperties = { display: "inline-flex", alignItems: "center", borderRadius: 999, background: "#eef2ff", color: "#3730a3", padding: "3px 8px", fontWeight: 900, whiteSpace: "nowrap" };

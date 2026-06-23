@@ -18,6 +18,7 @@ model Academy {
   users                User[]
   students             Student[]
   classGroups          ClassGroup[]
+  classLessons         ClassLesson[]
   classMemos           ClassMemo[]
   classGroupAssistants ClassGroupAssistant[]
   studentClasses       StudentClass[]
@@ -29,6 +30,7 @@ model Academy {
   taskAssignees        TaskAssignee[]
   assistantWorkShifts  AssistantWorkShift[]
   calendarPrivateMemos CalendarPrivateMemo[]
+  calendarEventMemos   CalendarEventMemo[]
   omrUploads           OmrUpload[]
   exams                Exam[]
   examResults          ExamResult[]
@@ -89,6 +91,7 @@ model User {
   assistantWorkShifts AssistantWorkShift[] @relation("AssistantWorkShiftAssistant")
   createdWorkShifts   AssistantWorkShift[] @relation("AssistantWorkShiftCreator")
   calendarPrivateMemos CalendarPrivateMemo[]
+  calendarEventMemos   CalendarEventMemo[]
   counselingRecords CounselingRecord[] @relation("CounselingOwner")
   clinicRecords     ClinicRecord[]     @relation("ClinicOwner")
   questionRecords   QuestionRecord[]   @relation("QuestionOwner")
@@ -180,6 +183,7 @@ model ClassGroup {
 
   studentClasses  StudentClass[]
   classAssistants ClassGroupAssistant[]
+  lessons         ClassLesson[]
   memos           ClassMemo[]
   tasks           Task[]
   recurringTasks  RecurringTask[]
@@ -188,6 +192,28 @@ model ClassGroup {
   @@index([academyId])
   @@index([teacherId])
   @@index([assistantId])
+}
+
+model ClassLesson {
+  id           String   @id @default(uuid())
+  academyId    String
+  classGroupId String
+  position     Int
+  title        String
+  lessonDate   String?
+  startTime    String?
+  endTime      String?
+  memo         String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  academy    Academy    @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  classGroup ClassGroup @relation(fields: [classGroupId], references: [id], onDelete: Cascade)
+
+  @@unique([classGroupId, position])
+  @@index([academyId])
+  @@index([classGroupId])
+  @@index([academyId, lessonDate])
 }
 
 enum ClassGroupStatus {
@@ -549,6 +575,26 @@ model CalendarPrivateMemo {
 
   @@unique([userId, date])
   @@index([academyId, date])
+}
+
+model CalendarEventMemo {
+  id        String   @id @default(uuid())
+  academyId String
+  eventKey  String
+  eventType String
+  eventDate String
+  title     String?
+  content   String
+  writerId  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  academy Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  writer  User?   @relation(fields: [writerId], references: [id], onDelete: SetNull)
+
+  @@unique([academyId, eventKey])
+  @@index([academyId, eventDate])
+  @@index([writerId])
 }
 
 model RecurringTask {

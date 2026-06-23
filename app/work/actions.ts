@@ -1,6 +1,7 @@
 "use server";
 
 import { requireUser } from "@/lib/auth";
+import { saveAssistantWorkNote } from "@/lib/assistantWorkNotes";
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 
@@ -112,6 +113,35 @@ export async function deleteWorkShiftAction(formData: FormData) {
       academyId: user.academyId,
       ...(user.role === "ASSISTANT" ? { assistantId: user.id } : {}),
     },
+  });
+
+  revalidatePath("/work");
+  revalidatePath("/staff");
+}
+
+export async function saveAssistantWorkNoteAction(formData: FormData) {
+  const user = await requireUser();
+  if (!canManageAssistantWork(user.role)) return;
+
+  const assistantId = cleanId(text(formData, "assistantId"));
+  if (!assistantId) return;
+
+  const assistant = await prisma.user.findFirst({
+    where: {
+      id: assistantId,
+      academyId: user.academyId,
+      role: "ASSISTANT",
+      isActive: true,
+    },
+    select: { id: true },
+  });
+  if (!assistant) return;
+
+  await saveAssistantWorkNote({
+    academyId: user.academyId,
+    assistantId,
+    content: text(formData, "content"),
+    actor: { id: user.id, name: user.name },
   });
 
   revalidatePath("/work");

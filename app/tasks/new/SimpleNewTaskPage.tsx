@@ -1,4 +1,5 @@
 import { canCreateTask, requireUser } from "@/lib/auth";
+import { sheetFillPalette } from "@/lib/colorPalettes";
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import type { CSSProperties } from "react";
@@ -105,7 +106,18 @@ export default async function SimpleNewTaskPage({ searchParams }: Props) {
               <option value="URGENT">긴급</option>
             </select>
           </label>
-          <label style={label}>업무 색상<input type="color" name="color" defaultValue="#2563eb" style={colorInput} /></label>
+          <fieldset style={colorField}>
+            <legend style={colorLegend}>업무 색상</legend>
+            <div style={colorGrid}>
+              {sheetFillPalette.map((color) => (
+                <label key={color.value} style={colorChoice} title={color.label}>
+                  <input name="color" type="radio" value={color.value} defaultChecked={color.value === "#3d85c6"} />
+                  <span style={colorChoiceDot(color.value)} />
+                  <span>{color.label}</span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
           <label style={label}>시작일<input type="date" name="startDate" defaultValue={defaultDate} style={input} /></label>
           <label style={label}>마감일<input type="date" name="dueDate" defaultValue={defaultDate} style={input} /></label>
           <label style={{ ...label, gridColumn: "1 / -1" }}>업무 설명
@@ -129,17 +141,41 @@ function roleText(role: string) {
   return role;
 }
 
-const page: CSSProperties = { padding: 32, color: "#111827" };
-const card: CSSProperties = { maxWidth: 940, margin: "0 auto", background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: 28 };
+const page: CSSProperties = { padding: 16, color: "#111827" };
+const card: CSSProperties = { width: "100%", maxWidth: "none", margin: 0, background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: 16 };
 const back: CSSProperties = { color: "#2563eb", fontWeight: 900, textDecoration: "none" };
-const title: CSSProperties = { fontSize: 30, fontWeight: 950, margin: "12px 0 6px" };
+const title: CSSProperties = { fontSize: 25, fontWeight: 950, margin: "10px 0 6px" };
 const desc: CSSProperties = { margin: "0 0 18px", color: "#6b7280" };
 const form: CSSProperties = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 };
 const label: CSSProperties = { display: "flex", flexDirection: "column", gap: 8, fontWeight: 900 };
 const input: CSSProperties = { padding: "12px", border: "1px solid #d1d5db", borderRadius: 8, background: "#fff", color: "#111827" };
-const colorInput: CSSProperties = { ...input, height: 44, padding: 6 };
+const colorField: CSSProperties = { border: "1px solid #d1d5db", borderRadius: 8, padding: 10, fontWeight: 900 };
+const colorLegend: CSSProperties = { padding: "0 4px" };
+const colorGrid: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(118px, 1fr))", gap: 6, marginTop: 4 };
+const colorChoice: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "auto 18px minmax(0, 1fr)",
+  alignItems: "center",
+  gap: 7,
+  border: "1px solid #e5e7eb",
+  borderRadius: 7,
+  padding: "7px 8px",
+  background: "#f9fafb",
+  fontSize: 12,
+  fontWeight: 850,
+};
 const assigneeField: CSSProperties = { gridColumn: "1 / -1", border: "1px solid #d1d5db", borderRadius: 8, padding: 12, fontWeight: 900 };
 const assigneeGrid: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 8, marginTop: 8 };
 const checkChip: CSSProperties = { display: "grid", gridTemplateColumns: "auto 1fr auto", alignItems: "center", gap: 8, border: "1px solid #e5e7eb", borderRadius: 8, padding: "9px 10px", background: "#f9fafb", fontSize: 13 };
 const btn: CSSProperties = { gridColumn: "1 / -1", background: "#111827", color: "#fff", border: 0, borderRadius: 8, padding: "12px", fontWeight: 950 };
 const error: CSSProperties = { background: "#fee2e2", color: "#991b1b", padding: 12, borderRadius: 8, fontWeight: 900 };
+
+function colorChoiceDot(color: string): CSSProperties {
+  return {
+    width: 18,
+    height: 18,
+    borderRadius: 999,
+    border: "1px solid #94a3b8",
+    background: color,
+  };
+}

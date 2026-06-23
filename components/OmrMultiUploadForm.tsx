@@ -19,9 +19,10 @@ type Props = {
 export default function OmrMultiUploadForm({ exams, selectedExamId }: Props) {
   const [files, setFiles] = useState<Array<{ name: string; size: number }>>([]);
   const totalSize = useMemo(() => files.reduce((sum, file) => sum + file.size, 0), [files]);
+  const processableSize = useMemo(() => files.filter((file) => file.size <= OMR_MAX_FILE_BYTES).reduce((sum, file) => sum + file.size, 0), [files]);
   const hasOversizedFile = files.some((file) => file.size > OMR_MAX_FILE_BYTES);
-  const isBatchTooLarge = totalSize > OMR_MAX_BATCH_BYTES;
-  const isUploadBlocked = hasOversizedFile || isBatchTooLarge;
+  const isBatchTooLarge = processableSize > OMR_MAX_BATCH_BYTES;
+  const isUploadBlocked = isBatchTooLarge;
 
   return (
     <form action={uploadOmrAction} style={stack}>
@@ -69,7 +70,7 @@ export default function OmrMultiUploadForm({ exams, selectedExamId }: Props) {
               <small style={file.size > OMR_MAX_FILE_BYTES ? dangerText : undefined}>{formatOmrBytes(file.size)}</small>
             </div>
           ))}
-          {hasOversizedFile && <p style={dangerText}>80MB를 넘는 파일이 있습니다. PDF를 흑백/저해상도로 다시 스캔하거나 파일을 나눠서 올려주세요.</p>}
+          {hasOversizedFile && <p style={dangerText}>{OMR_MAX_FILE_LABEL}를 넘는 파일은 건너뛰고, 가능한 파일만 업로드됩니다.</p>}
           {isBatchTooLarge && <p style={dangerText}>선택한 파일 총 용량이 너무 큽니다. 여러 번 나눠서 업로드해주세요.</p>}
         </div>
       )}

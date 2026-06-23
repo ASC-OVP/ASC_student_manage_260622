@@ -1102,11 +1102,17 @@ export default function StudentSheetMatrix({
             <input
               value={bulkAttendanceStatus}
               onChange={(event) => setBulkAttendanceStatus(event.target.value)}
+              list="bulk-attendance-options"
               autoComplete="off"
               style={bulkSelect}
               disabled={isPending}
               aria-label="선택 학생 출석 변경"
             />
+            <datalist id="bulk-attendance-options">
+              {visibleAttendanceOptions.map((option) => (
+                <option key={option.value} value={option.label} />
+              ))}
+            </datalist>
             <button type="button" onClick={applyBulkAttendance} disabled={isPending} style={bulkButton}>
               출석 변경
             </button>
@@ -1115,11 +1121,17 @@ export default function StudentSheetMatrix({
             <input
               value={bulkAssignmentStatus}
               onChange={(event) => setBulkAssignmentStatus(event.target.value)}
+              list="bulk-assignment-options"
               autoComplete="off"
               style={bulkSelect}
               disabled={isPending}
               aria-label="선택 학생 과제 변경"
             />
+            <datalist id="bulk-assignment-options">
+              {visibleAssignmentOptions.map((option) => (
+                <option key={option.value} value={option.label} />
+              ))}
+            </datalist>
             <button type="button" onClick={applyBulkAssignment} disabled={isPending} style={bulkButton}>
               과제 변경
             </button>

@@ -18,7 +18,7 @@ export const dynamic = "force-dynamic";
 export default async function CalendarPage() {
   const user = await requireUser();
 
-  const [classGroups, tasks, classRoomRows, taskStartRows, privateMemos] = await Promise.all([
+  const [classGroups, tasks, classRoomRows, taskStartRows, privateMemos, eventMemos] = await Promise.all([
     prisma.classGroup.findMany({
       where: classGroupWhereForUser(user),
       orderBy: [{ status: "asc" }, { name: "asc" }],
@@ -30,6 +30,10 @@ export default async function CalendarPage() {
           include: { assistant: { select: { id: true, name: true } } },
         },
         _count: { select: { studentClasses: true } },
+        lessons: {
+          orderBy: { position: "asc" },
+          select: { id: true, position: true, title: true, lessonDate: true, startTime: true, endTime: true },
+        },
       },
     }),
     prisma.task.findMany({
@@ -51,6 +55,17 @@ export default async function CalendarPage() {
       where: { academyId: user.academyId, userId: user.id },
       orderBy: { date: "asc" },
       select: { date: true, content: true },
+    }),
+    prisma.calendarEventMemo.findMany({
+      where: { academyId: user.academyId },
+      orderBy: { updatedAt: "desc" },
+      select: {
+        eventKey: true,
+        eventDate: true,
+        content: true,
+        updatedAt: true,
+        writer: { select: { name: true } },
+      },
     }),
   ]);
 
@@ -118,6 +133,13 @@ export default async function CalendarPage() {
             }),
           ])}
           privateMemos={privateMemos}
+          eventMemos={eventMemos.map((memo) => ({
+            eventKey: memo.eventKey,
+            eventDate: memo.eventDate,
+            content: memo.content,
+            updatedAt: memo.updatedAt.toISOString(),
+            writerName: memo.writer?.name ?? null,
+          }))}
         />
       </section>
     </main>
@@ -169,12 +191,12 @@ function classEventsFromClassGroup(classGroup: {
   assistant: { id: string; name: string } | null;
   classAssistants: Array<{ assistantId: string; assistant: { id: string; name: string } }>;
   _count: { studentClasses: number };
+  lessons: Array<{ id: string; position: number; title: string; lessonDate: string | null; startTime: string | null; endTime: string | null }>;
 }): AcademyCalendarEvent[] {
   const effectiveStatus = effectiveClassStatus(classGroup);
   if (effectiveStatus === "PAUSED") return [];
 
   const daysOfWeek = parseClassDaysOfWeek(classGroup.daysOfWeek);
-  if (daysOfWeek.length === 0) return [];
 
   const assistantNames =
     classGroup.classAssistants.length > 0
@@ -182,6 +204,47 @@ function classEventsFromClassGroup(classGroup: {
       : classGroup.assistant?.name ?? null;
   const firstAssistant = classGroup.classAssistants[0]?.assistant ?? classGroup.assistant;
   const color = classStatusTone(effectiveStatus);
+
+  const savedLessons = classGroup.lessons.filter((lesson) => lesson.lessonDate);
+  if (savedLessons.length > 0) {
+    return savedLessons.map((lesson) => {
+      const lessonTitle = lesson.title || `${lesson.position}차시`;
+      const startTime = lesson.startTime || classGroup.startTime || "09:00";
+      const endTime = lesson.endTime || classGroup.endTime || undefined;
+      const timeText = [startTime, endTime].filter(Boolean).join("-");
+      return {
+        id: `class-lesson-${lesson.id}`,
+        title: `${lessonTitle} · ${classGroup.name}`,
+        start: lesson.lessonDate || undefined,
+        allDay: false,
+        startTime,
+        endTime,
+        backgroundColor: color,
+        borderColor: color,
+        textColor: "#fff",
+        extendedProps: {
+          type: "class",
+          sourceId: classGroup.id,
+          teacherId: classGroup.teacher?.id ?? null,
+          teacherName: classGroup.teacher?.name ?? null,
+          assistantId: firstAssistant?.id ?? null,
+          assistantName: assistantNames,
+          classGroupId: classGroup.id,
+          className: classGroup.name,
+          subject: classGroup.subject,
+          grade: classGroup.grade,
+          room: classGroup.room,
+          status: effectiveStatus,
+          description: classGroup.description,
+          studentCount: classGroup._count.studentClasses,
+          scheduleText: `${lessonTitle} / ${lesson.lessonDate}${timeText ? ` ${timeText}` : ""}`,
+          operationPeriod: formatOperatingPeriod(classGroup),
+        },
+      };
+    });
+  }
+
+  if (daysOfWeek.length === 0) return []; // no saved lessons or repeating weekday schedule
 
   return [
     {
@@ -349,8 +412,8 @@ function Stat({ label, value, tone = "default" }: { label: string; value: string
   );
 }
 
-const page: CSSProperties = { padding: 20, color: "#111827", background: "#f3f4f6", minHeight: "100vh" };
-const container: CSSProperties = { maxWidth: 1700, margin: "0 auto", display: "grid", gap: 12 };
+const page: CSSProperties = { padding: 14, color: "#111827", background: "#f3f4f6", minHeight: "100vh" };
+const container: CSSProperties = { width: "100%", maxWidth: "none", margin: 0, display: "grid", gap: 12 };
 const header: CSSProperties = {
   display: "flex",
   justifyContent: "space-between",
@@ -362,7 +425,7 @@ const header: CSSProperties = {
   padding: 16,
 };
 const eyebrow: CSSProperties = { margin: "0 0 4px", color: "#2563eb", fontWeight: 950, fontSize: 12 };
-const title: CSSProperties = { margin: 0, fontSize: 28, fontWeight: 950 };
+const title: CSSProperties = { margin: 0, fontSize: 25, fontWeight: 950 };
 const desc: CSSProperties = { margin: "6px 0 0", color: "#6b7280", fontSize: 14 };
 const summaryStrip: CSSProperties = { display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" };
 const stat: CSSProperties = { minWidth: 102, border: "1px solid #e5e7eb", borderRadius: 8, padding: "8px 10px", display: "grid", gap: 3, background: "#fff" };

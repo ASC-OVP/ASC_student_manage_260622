@@ -142,14 +142,14 @@ export default async function NewClassPage() {
   );
 }
 
-const page: CSSProperties = { minHeight: "100vh", padding: 28, color: "#111827", background: "#f8fafc" };
-const card: CSSProperties = { maxWidth: 920, margin: "0 auto", background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: 24, boxShadow: "0 12px 30px rgba(15,23,42,.07)" };
+const page: CSSProperties = { minHeight: "100vh", padding: 16, color: "#111827", background: "#f8fafc" };
+const card: CSSProperties = { width: "100%", maxWidth: "none", margin: 0, background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: 16, boxShadow: "0 12px 30px rgba(15,23,42,.07)" };
 const topBar: CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 16 };
 const backLink: CSSProperties = { color: "#2563eb", fontWeight: 950, textDecoration: "none" };
 const badge: CSSProperties = { border: "1px solid #dbeafe", background: "#eff6ff", color: "#1d4ed8", borderRadius: 999, padding: "6px 10px", fontSize: 12, fontWeight: 950 };
 const header: CSSProperties = { borderBottom: "1px solid #e5e7eb", paddingBottom: 16, marginBottom: 18 };
 const eyebrow: CSSProperties = { margin: 0, color: "#2563eb", fontSize: 12, fontWeight: 950 };
-const title: CSSProperties = { margin: "4px 0", fontSize: 30, fontWeight: 950 };
+const title: CSSProperties = { margin: "4px 0", fontSize: 25, fontWeight: 950 };
 const desc: CSSProperties = { margin: 0, color: "#6b7280", fontWeight: 750, lineHeight: 1.5 };
 const form: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 14 };
 const label: CSSProperties = { display: "flex", flexDirection: "column", gap: 7, fontWeight: 950, fontSize: 13, color: "#374151" };
