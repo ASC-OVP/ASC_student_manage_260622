@@ -13,6 +13,9 @@ export default async function SetupPage({ searchParams }: Props) {
         <p style={desc}>팀마다 별도 공간을 만들고, 로그인할 때 강사팀 코드를 입력해 들어갑니다.</p>
         {params.error === "empty" && <p style={error}>모든 항목을 입력해주세요.</p>}
         {params.error === "duplicate" && <p style={error}>이미 사용 중인 강사팀 코드입니다.</p>}
+        {params.error === "server" && (
+          <p style={error}>강사팀 등록 중 오류가 났습니다. Codespace DB 초기화 후 다시 시도해주세요.</p>
+        )}
 
         <form action="/api/setup" method="post" style={form}>
           <label style={label}>

@@ -14,42 +14,52 @@ function redirectTo(path: string) {
 }
 
 export async function POST(request: Request) {
-  const formData = await request.formData();
-  const academyName = text(formData, "academyName");
-  const academyCode = text(formData, "academyCode");
-  const name = text(formData, "name");
-  const loginId = text(formData, "loginId");
-  const password = text(formData, "password");
+  try {
+    const formData = await request.formData();
+    const academyName = text(formData, "academyName");
+    const academyCode = text(formData, "academyCode");
+    const name = text(formData, "name");
+    const loginId = text(formData, "loginId");
+    const password = text(formData, "password");
 
-  if (!academyName || !academyCode || !name || !loginId || !password) {
-    return redirectTo("/setup?error=empty");
-  }
+    if (!academyName || !academyCode || !name || !loginId || !password) {
+      return redirectTo("/setup?error=empty");
+    }
 
-  const existingAcademy = await prisma.academy.findUnique({
-    where: { code: academyCode },
-    select: { id: true },
-  });
-
-  if (existingAcademy) {
-    return redirectTo("/setup?error=duplicate");
-  }
-
-  await prisma.$transaction(async (tx) => {
-    const academy = await tx.academy.create({
-      data: { name: academyName, code: academyCode },
+    const existingAcademy = await prisma.academy.findUnique({
+      where: { code: academyCode },
       select: { id: true },
     });
 
-    await tx.user.create({
-      data: {
-        academyId: academy.id,
-        name,
-        loginId,
-        passwordHash: hashPassword(password),
-        role: "ADMIN",
-      },
-    });
-  });
+    if (existingAcademy) {
+      return redirectTo("/setup?error=duplicate");
+    }
 
-  return redirectTo("/login?created=1");
+    await prisma.$transaction(async (tx) => {
+      const academy = await tx.academy.create({
+        data: { name: academyName, code: academyCode },
+        select: { id: true },
+      });
+
+      await tx.user.create({
+        data: {
+          academyId: academy.id,
+          name,
+          loginId,
+          passwordHash: hashPassword(password),
+          role: "ADMIN",
+        },
+      });
+    });
+
+    return redirectTo("/login?created=1");
+  } catch (error) {
+    console.error("[setup] failed to create workspace", error);
+
+    if (typeof error === "object" && error && "code" in error && error.code === "P2002") {
+      return redirectTo("/setup?error=duplicate");
+    }
+
+    return redirectTo("/setup?error=server");
+  }
 }
