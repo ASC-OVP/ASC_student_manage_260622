@@ -2,6 +2,9 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: [
+    "*.app.github.dev",
+    "*.preview.app.github.dev",
+    "*.githubpreview.dev",
     "192.168.*.*",
     "10.*.*.*",
     "172.16.*.*",
@@ -26,6 +29,9 @@ const nextConfig: NextConfig = {
       // OMR uploads are scanned PDFs/images, so keep this above the app batch limit.
       bodySizeLimit: "200mb",
       allowedOrigins: [
+        "*.app.github.dev",
+        "*.preview.app.github.dev",
+        "*.githubpreview.dev",
         "192.168.*.*",
         "10.*.*.*",
         "172.16.*.*",
