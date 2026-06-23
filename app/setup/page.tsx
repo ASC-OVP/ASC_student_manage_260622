@@ -1,6 +1,5 @@
 import Link from "next/link";
 import type { CSSProperties } from "react";
-import { createFirstWorkspace } from "./actions";
 
 type Props = { searchParams: Promise<{ error?: string }> };
 
@@ -15,7 +14,7 @@ export default async function SetupPage({ searchParams }: Props) {
         {params.error === "empty" && <p style={error}>모든 항목을 입력해주세요.</p>}
         {params.error === "duplicate" && <p style={error}>이미 사용 중인 강사팀 코드입니다.</p>}
 
-        <form action={createFirstWorkspace} style={form}>
+        <form action="/api/setup" method="post" style={form}>
           <label style={label}>
             강사팀 이름
             <input name="academyName" placeholder="예: 숙명여고 과학팀" required style={input} />
