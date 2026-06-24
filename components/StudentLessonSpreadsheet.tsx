@@ -2170,17 +2170,6 @@ export default function StudentLessonSpreadsheet({
             </table>
           </div>
           <div style={sheetBottomBar}>
-            <button type="button" onClick={addLesson} style={sheetBottomIconButton} title="차시 추가">
-              +
-            </button>
-            <button
-              type="button"
-              onClick={() => setLessonPanelOpen((current) => !current)}
-              style={{ ...sheetBottomIconButton, ...(lessonPanelOpen ? sheetBottomIconButtonActive : {}) }}
-              title="차시 선택 열기"
-            >
-              ☰
-            </button>
             <nav style={sheetTabs} aria-label="반 시트 탭">
               <Link href="/students?classGroupId=all" style={{ ...sheetTab, ...(!effectiveClassGroupId ? sheetTabActive : {}) }}>
                 전체 학생
@@ -3437,29 +3426,6 @@ const sheetBottomBar: CSSProperties = {
   borderTop: "1px solid #d7dce5",
   background: "#f8fafc",
   boxShadow: "0 -1px 2px rgba(15, 23, 42, 0.04)",
-};
-
-const sheetBottomIconButton: CSSProperties = {
-  width: 28,
-  height: 28,
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  border: "1px solid #cbd5e1",
-  borderRadius: 7,
-  background: "#ffffff",
-  color: "#334155",
-  fontSize: 16,
-  fontWeight: 900,
-  lineHeight: 1,
-  cursor: "pointer",
-  flex: "0 0 auto",
-};
-
-const sheetBottomIconButtonActive: CSSProperties = {
-  border: "1px solid #2563eb",
-  background: "#dbeafe",
-  color: "#1d4ed8",
 };
 
 const sheetTabs: CSSProperties = {
