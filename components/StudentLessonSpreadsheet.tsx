@@ -3406,8 +3406,6 @@ const sheetWrap: CSSProperties = {
   overflow: "auto",
   minHeight: 0,
   background: "#ffffff",
-  backgroundImage: "linear-gradient(#eef2f7 1px, transparent 1px)",
-  backgroundSize: "100% 34px",
   userSelect: "none",
 };
 
