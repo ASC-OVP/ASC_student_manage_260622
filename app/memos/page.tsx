@@ -1,7 +1,9 @@
 import Link from "next/link";
 import type { CSSProperties, ReactNode } from "react";
 import { bulkStudentMemoAction } from "@/app/memos/actions";
-import { requireUser } from "@/lib/auth";
+import AnnouncementMemoList, { type AnnouncementMemoView } from "@/components/AnnouncementMemoList";
+import PersonalStickyBoard, { type StickyMemoView } from "@/components/PersonalStickyBoard";
+import { canManageAnnouncements, requireUser } from "@/lib/auth";
 import { MemoType } from "@/lib/generated/prisma";
 import { prisma } from "@/lib/prisma";
 
@@ -15,6 +17,7 @@ type Props = {
     from?: string;
     to?: string;
     sort?: string;
+    error?: string;
   }>;
 };
 
@@ -54,8 +57,25 @@ export default async function MemosPage({ searchParams }: Props) {
   const params = (await searchParams) ?? {};
   const filters = normalizeFilters(params);
   const returnTo = buildReturnTo(filters);
+  const canManage = canManageAnnouncements(user.role);
 
-  const [studentMemos, classMemos, taskComments, privateMemos, eventMemos, writers] = await Promise.all([
+  const [announcements, stickyMemos, studentMemos, classMemos, taskComments, privateMemos, eventMemos, writers] = await Promise.all([
+    prisma.announcementMemo.findMany({
+      where: { academyId: user.academyId },
+      orderBy: [{ isPinned: "desc" }, { createdAt: "desc" }],
+      take: 80,
+      include: {
+        author: { select: { name: true } },
+        reads: { where: { userId: user.id }, select: { readAt: true } },
+        _count: { select: { reads: true } },
+      },
+    }),
+    prisma.personalStickyMemo.findMany({
+      where: { academyId: user.academyId, userId: user.id },
+      orderBy: { updatedAt: "desc" },
+      take: 80,
+      select: { id: true, content: true, color: true, updatedAt: true },
+    }),
     prisma.studentMemo.findMany({
       where: { student: { academyId: user.academyId } },
       orderBy: { createdAt: "desc" },
@@ -114,6 +134,28 @@ export default async function MemosPage({ searchParams }: Props) {
       select: { id: true, name: true },
     }),
   ]);
+
+  const announcementViews: AnnouncementMemoView[] = announcements
+    .map((memo) => ({
+      id: memo.id,
+      title: memo.title,
+      content: memo.content,
+      priority: memo.priority,
+      isPinned: memo.isPinned,
+      createdAt: memo.createdAt,
+      updatedAt: memo.updatedAt,
+      authorName: memo.author.name,
+      readAt: memo.reads[0]?.readAt ?? null,
+      readCount: memo._count.reads,
+    }))
+    .sort(sortAnnouncements);
+
+  const stickyViews: StickyMemoView[] = stickyMemos.map((memo) => ({
+    id: memo.id,
+    content: memo.content,
+    color: memo.color,
+    updatedAt: memo.updatedAt,
+  }));
 
   const rows: MemoRow[] = [
     ...studentMemos.map((memo): MemoRow => ({
@@ -202,26 +244,37 @@ export default async function MemosPage({ searchParams }: Props) {
 
   return (
     <main style={page}>
+      <style>{memoPageCss}</style>
       <section style={container}>
         <header style={header}>
           <div>
-            <p style={eyebrow}>메모 관리</p>
-            <h1 style={title}>통합 메모함</h1>
-            <p style={desc}>학생, 반, 업무, 캘린더에 흩어진 메모를 한 화면에서 찾고 정리합니다.</p>
+            <h1 style={title}>메모 관리</h1>
+            <p style={desc}>운영 공지와 개인 메모를 빠르게 확인합니다.</p>
           </div>
-          <Link href="/memos/new" style={primaryButton}>+ 메모 추가</Link>
+          <Link href="/memos/new" style={primaryButton}>학생 메모 추가</Link>
         </header>
 
-        <section style={statsGrid}>
-          <Stat label="전체 메모" value={`${rows.length}개`} />
-          <Stat label="학생 메모" value={`${studentMemoCount}개`} />
-          <Stat label="반 메모" value={`${classMemoCount}개`} />
-          <Stat label="그 외 메모" value={`${otherMemoCount}개`} />
-          <Stat label="중요 메모" value={`${importantCount}개`} tone={importantCount ? "warn" : "default"} />
+        <section className="memo-main-grid" style={memoGrid}>
+          <AnnouncementMemoList announcements={announcementViews} canManage={canManage} error={params.error} />
+          <PersonalStickyBoard memos={stickyViews} />
         </section>
 
-        <form style={filterBar}>
-          <input name="q" defaultValue={filters.q} placeholder="내용, 학생명, 반, 작성자 검색" style={searchInput} />
+        <section style={legacyPanel}>
+          <div style={legacyHead}>
+            <div>
+              <h2 style={legacyTitle}>기존 기록 메모</h2>
+              <p style={legacyDesc}>학생·반·업무·캘린더에 연결된 메모는 보존하고, 필요할 때 검색해서 확인합니다.</p>
+            </div>
+            <div style={legacySummary}>
+              <span style={legacyPill}>전체 {rows.length}개</span>
+              <span style={legacyPill}>학생 {studentMemoCount}개</span>
+              <span style={legacyPill}>기타 {classMemoCount + otherMemoCount}개</span>
+              {importantCount > 0 && <span style={legacyWarnPill}>중요 {importantCount}개</span>}
+            </div>
+          </div>
+
+        <form className="memo-filter-grid" style={filterBar}>
+          <input className="memo-search-field" name="q" defaultValue={filters.q} placeholder="내용, 학생명, 반, 작성자 검색" style={searchInput} />
           <select name="source" defaultValue={filters.source} style={selectInput}>
             {sourceOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </select>
@@ -297,7 +350,7 @@ export default async function MemosPage({ searchParams }: Props) {
                       {row.isImportant && <span style={importantBadge}>중요</span>}
                     </Td>
                     <Td><b>{row.targetLabel || "-"}</b></Td>
-                    <Td><p style={memoText}>{row.content}</p></Td>
+                    <Td><p className="memo-clamp" style={memoText}>{row.content}</p></Td>
                     <Td>{row.typeLabel}</Td>
                     <Td>{row.writerName}</Td>
                     <Td>{formatDateTime(row.createdAt)}</Td>
@@ -313,6 +366,7 @@ export default async function MemosPage({ searchParams }: Props) {
             </table>
           </div>
         </form>
+        </section>
       </section>
     </main>
   );
@@ -357,6 +411,14 @@ function sortRows(rows: MemoRow[], sort: string) {
   });
 }
 
+function sortAnnouncements(a: AnnouncementMemoView, b: AnnouncementMemoView) {
+  if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
+  const priorityRank: Record<string, number> = { URGENT: 0, IMPORTANT: 1, NORMAL: 2 };
+  const rankDiff = (priorityRank[a.priority] ?? 3) - (priorityRank[b.priority] ?? 3);
+  if (rankDiff !== 0) return rankDiff;
+  return b.createdAt.getTime() - a.createdAt.getTime();
+}
+
 function buildReturnTo(filters: ReturnType<typeof normalizeFilters>) {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(filters)) {
@@ -394,15 +456,6 @@ function formatDateTime(date: Date) {
   }).format(date);
 }
 
-function Stat({ label, value, tone = "default" }: { label: string; value: string; tone?: "default" | "warn" }) {
-  return (
-    <div style={{ ...statCard, ...(tone === "warn" ? warnCard : {}) }}>
-      <span>{label}</span>
-      <b>{value}</b>
-    </div>
-  );
-}
-
 function Th({ children }: { children: ReactNode }) {
   return <th style={th}>{children}</th>;
 }
@@ -423,34 +476,63 @@ function sourceBadge(source: MemoSource): CSSProperties {
   return { ...badge, background: color.bg, color: color.fg };
 }
 
-const page: CSSProperties = { padding: 14, color: "#111827", background: "#f3f4f6", minHeight: "100vh" };
+const memoPageCss = `
+  .memo-main-grid {
+    grid-template-columns: minmax(0, 1.45fr) minmax(320px, .75fr);
+  }
+  .memo-filter-grid {
+    grid-template-columns: minmax(260px, 2fr) repeat(4, minmax(112px, .8fr)) repeat(2, 128px) minmax(104px, .7fr) auto auto;
+  }
+  .memo-clamp {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+  @media (max-width: 1120px) {
+    .memo-main-grid {
+      grid-template-columns: 1fr;
+    }
+    .memo-filter-grid {
+      grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+    }
+    .memo-search-field {
+      grid-column: 1 / -1;
+    }
+  }
+`;
+
+const page: CSSProperties = { padding: 12, color: "#111827", background: "#f3f4f6", minHeight: "100vh" };
 const container: CSSProperties = { width: "100%", maxWidth: "none", margin: 0, display: "grid", gap: 12 };
-const header: CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, background: "#fff", border: "1px solid #dfe3ea", borderRadius: 10, padding: 16 };
-const eyebrow: CSSProperties = { margin: "0 0 4px", color: "#2563eb", fontWeight: 950, fontSize: 12 };
-const title: CSSProperties = { margin: 0, fontSize: 25, fontWeight: 950 };
-const desc: CSSProperties = { margin: "6px 0 0", color: "#6b7280", fontSize: 14 };
+const header: CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, background: "#fff", border: "1px solid #dfe3ea", borderRadius: 10, padding: "12px 14px" };
+const title: CSSProperties = { margin: 0, fontSize: 23, fontWeight: 950 };
+const desc: CSSProperties = { margin: "4px 0 0", color: "#6b7280", fontSize: 13 };
 const primaryButton: CSSProperties = { background: "#111827", color: "#fff", borderRadius: 8, padding: "10px 13px", textDecoration: "none", fontWeight: 950, whiteSpace: "nowrap" };
-const statsGrid: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(5, minmax(120px, 1fr))", gap: 8 };
-const statCard: CSSProperties = { background: "#fff", border: "1px solid #e5e7eb", borderRadius: 8, padding: 12, display: "grid", gap: 5 };
-const warnCard: CSSProperties = { borderColor: "#fde68a", background: "#fffbeb" };
-const filterBar: CSSProperties = { display: "grid", gridTemplateColumns: "minmax(220px, 1.6fr) repeat(4, minmax(116px, .7fr)) repeat(2, 132px) 110px auto auto", gap: 8, background: "#fff", border: "1px solid #dfe3ea", borderRadius: 10, padding: 10, alignItems: "center" };
+const memoGrid: CSSProperties = { display: "grid", gap: 12, alignItems: "start" };
+const legacyPanel: CSSProperties = { display: "grid", gap: 10, background: "#fff", border: "1px solid #dfe3ea", borderRadius: 10, padding: 11 };
+const legacyHead: CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" };
+const legacyTitle: CSSProperties = { margin: 0, fontSize: 18, fontWeight: 950 };
+const legacyDesc: CSSProperties = { margin: "5px 0 0", color: "#6b7280", fontSize: 13 };
+const legacySummary: CSSProperties = { display: "flex", gap: 6, flexWrap: "wrap", color: "#4b5563", fontSize: 12, fontWeight: 900 };
+const legacyPill: CSSProperties = { border: "1px solid #e5e7eb", background: "#f8fafc", borderRadius: 999, padding: "5px 8px" };
+const legacyWarnPill: CSSProperties = { ...legacyPill, borderColor: "#fde68a", background: "#fffbeb", color: "#92400e" };
+const filterBar: CSSProperties = { display: "grid", gap: 7, background: "#f8fafc", border: "1px solid #e5e7eb", borderRadius: 8, padding: 8, alignItems: "center" };
 const searchInput: CSSProperties = { height: 34, border: "1px solid #d1d5db", borderRadius: 7, padding: "0 10px", minWidth: 0 };
 const selectInput: CSSProperties = { ...searchInput, background: "#fff" };
 const dateInput: CSSProperties = { ...searchInput, background: "#fff" };
 const secondaryButton: CSSProperties = { height: 34, border: "1px solid #111827", borderRadius: 7, background: "#111827", color: "#fff", padding: "0 12px", fontWeight: 950, cursor: "pointer" };
 const ghostButton: CSSProperties = { height: 34, display: "inline-flex", alignItems: "center", justifyContent: "center", border: "1px solid #d1d5db", borderRadius: 7, background: "#fff", color: "#111827", padding: "0 12px", fontWeight: 950, textDecoration: "none" };
-const tablePanel: CSSProperties = { background: "#fff", border: "1px solid #dfe3ea", borderRadius: 10, overflow: "hidden" };
-const bulkBar: CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: 10, borderBottom: "1px solid #e5e7eb", flexWrap: "wrap" };
+const tablePanel: CSSProperties = { background: "#fff", border: "1px solid #e5e7eb", borderRadius: 8, overflow: "hidden" };
+const bulkBar: CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "8px 10px", borderBottom: "1px solid #e5e7eb", flexWrap: "wrap" };
 const bulkLeft: CSSProperties = { display: "flex", alignItems: "center", gap: 8, color: "#4b5563", fontSize: 13, flexWrap: "wrap" };
 const bulkActions: CSSProperties = { display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" };
 const smallButton: CSSProperties = { height: 30, border: "1px solid #d1d5db", borderRadius: 7, background: "#fff", color: "#111827", padding: "0 9px", fontSize: 12, fontWeight: 950, cursor: "pointer" };
 const compactSelect: CSSProperties = { height: 30, border: "1px solid #d1d5db", borderRadius: 7, background: "#fff", padding: "0 8px", fontSize: 12, fontWeight: 850 };
 const tableWrap: CSSProperties = { overflow: "auto" };
-const table: CSSProperties = { width: "100%", minWidth: 980, borderCollapse: "collapse", fontSize: 13 };
-const th: CSSProperties = { textAlign: "left", padding: "9px 10px", background: "#f8fafc", borderBottom: "1px solid #d1d5db", color: "#374151", whiteSpace: "nowrap" };
-const td: CSSProperties = { padding: "9px 10px", borderBottom: "1px solid #f1f5f9", verticalAlign: "top" };
-const memoText: CSSProperties = { margin: 0, maxWidth: 620, whiteSpace: "pre-wrap", lineHeight: 1.45, color: "#374151" };
-const badge: CSSProperties = { display: "inline-flex", alignItems: "center", borderRadius: 999, padding: "4px 7px", fontSize: 11, fontWeight: 950, whiteSpace: "nowrap", marginRight: 5 };
+const table: CSSProperties = { width: "100%", minWidth: 940, borderCollapse: "collapse", fontSize: 12 };
+const th: CSSProperties = { textAlign: "left", padding: "8px 9px", background: "#f8fafc", borderBottom: "1px solid #d1d5db", color: "#374151", whiteSpace: "nowrap" };
+const td: CSSProperties = { padding: "7px 9px", borderBottom: "1px solid #f1f5f9", verticalAlign: "top" };
+const memoText: CSSProperties = { margin: 0, maxWidth: 560, whiteSpace: "normal", lineHeight: 1.35, color: "#374151", overflow: "hidden" };
+const badge: CSSProperties = { display: "inline-flex", alignItems: "center", borderRadius: 999, padding: "3px 7px", fontSize: 11, fontWeight: 950, whiteSpace: "nowrap", marginRight: 4 };
 const importantBadge: CSSProperties = { ...badge, background: "#fef3c7", color: "#92400e" };
 const linkButton: CSSProperties = { display: "inline-flex", alignItems: "center", height: 26, border: "1px solid #d1d5db", borderRadius: 7, color: "#111827", textDecoration: "none", padding: "0 8px", fontSize: 12, fontWeight: 950, whiteSpace: "nowrap" };
 const muted: CSSProperties = { color: "#9ca3af" };

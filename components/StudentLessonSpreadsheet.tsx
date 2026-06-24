@@ -172,6 +172,18 @@ type ColorPaletteItem = {
 type SortDirection = "asc" | "desc";
 type DragMode = "cell" | "row" | null;
 
+function createLocalId(prefix: string) {
+  const randomId =
+    typeof globalThis.crypto?.randomUUID === "function"
+      ? globalThis.crypto.randomUUID()
+      : `${new Date().getTime()}_${Math.random().toString(36).slice(2)}`;
+  return `${prefix}_${randomId}`;
+}
+
+function currentClientTime() {
+  return new Date().getTime();
+}
+
 const lessonFields: LessonField[] = [
   { id: "attendance", label: "출결", width: 92 },
   { id: "assignment", label: "과제", width: 104 },
@@ -607,6 +619,20 @@ export default function StudentLessonSpreadsheet({
   const searchTargetLabel = hasSelectionSearchScope ? "선택 범위" : isGlobalSearchScope ? "전체" : selectedColumnLabel;
 
   function createHistorySnapshot(): SheetHistorySnapshot {
+    const snapshotNameDrafts: Record<string, string> = { ...nameDrafts };
+    const snapshotMetaDrafts: Record<string, string> = { ...metaDrafts };
+    const snapshotClassGroupDraftIds: Record<string, string> = { ...classGroupDraftIds };
+
+    for (const row of displayRows) {
+      snapshotNameDrafts[row.id] = displayName(row);
+      snapshotClassGroupDraftIds[row.id] = classGroupDraftIds[row.id] ?? row.classGroupId ?? "";
+
+      for (const column of gridColumns) {
+        if (column.kind !== "meta" || column.id === "rowNumber") continue;
+        snapshotMetaDrafts[lessonCellKey(row.id, column.id)] = editableMetaValue(row, column.id as EditableMetaColumnId);
+      }
+    }
+
     return {
       values: { ...values },
       dirtyValues: { ...dirtyValues },
@@ -622,9 +648,9 @@ export default function StudentLessonSpreadsheet({
       extraLessonCount,
       lessonConfigDirty,
       localCustomColumns: localCustomColumns.map((column) => ({ ...column })),
-      nameDrafts: { ...nameDrafts },
-      metaDrafts: { ...metaDrafts },
-      classGroupDraftIds: { ...classGroupDraftIds },
+      nameDrafts: snapshotNameDrafts,
+      metaDrafts: snapshotMetaDrafts,
+      classGroupDraftIds: snapshotClassGroupDraftIds,
       customColumnDrafts: { ...customColumnDrafts },
       formatDraft: { ...formatDraft },
     };
@@ -702,7 +728,7 @@ export default function StudentLessonSpreadsheet({
   }
 
   function addCustomColumn() {
-    const id = `custom_${Date.now()}`;
+    const id = createLocalId("custom");
     const nextColumn: SheetCustomColumn = { id, label: "새 열", enabled: true };
     const nextColumns = [...localCustomColumns, nextColumn];
     pushHistory();
@@ -904,24 +930,10 @@ export default function StudentLessonSpreadsheet({
     }, 0);
   }
 
-  function saveName(row: StudentSheetRow) {
-    if (suppressBlurSaveRef.current) {
-      setEditingNameId(null);
-      return;
-    }
+  function finishNameEdit(row: StudentSheetRow) {
     const value = (nameDrafts[row.id] ?? row.name).trim();
     setEditingNameId(null);
-    if (!value || value === row.name) return;
-    const formData = new FormData();
-    formData.set("studentId", row.id);
-    formData.set("field", "name");
-    formData.set("value", value);
-    setStatusText("학생명 저장 중");
-    startTransition(() => {
-      void updateStudentSheetCell(formData)
-        .then(() => setStatusText("학생명 저장됨"))
-        .catch((error) => setStatusText(error instanceof Error ? error.message : "학생명 저장 실패"));
-    });
+    if (value) setStatusText("저장 대기");
   }
 
   function editableMetaValue(row: StudentSheetRow, columnId: EditableMetaColumnId) {
@@ -963,33 +975,15 @@ export default function StudentLessonSpreadsheet({
     }
   }
 
-  function saveMetaText(row: StudentSheetRow, columnId: Exclude<EditableMetaColumnId, "classGroup">) {
-    if (suppressBlurSaveRef.current) {
-      setEditingMetaKey(null);
-      return;
-    }
+  function finishMetaTextEdit(row: StudentSheetRow, columnId: Exclude<EditableMetaColumnId, "classGroup">) {
     const key = lessonCellKey(row.id, columnId);
     const value = (metaDrafts[key] ?? metaCellValue(row, columnId)).trim();
     setEditingMetaKey(null);
-    if (value === metaCellValue(row, columnId)) return;
-
     setMetaDrafts((current) => ({ ...current, [key]: value }));
-    const formData = new FormData();
-    formData.set("studentId", row.id);
-    formData.set("field", columnId);
-    formData.set("value", value);
-    setStatusText("학생 정보 저장 중");
-    startTransition(() => {
-      void updateStudentSheetCell(formData)
-        .then(() => {
-          setStatusText("학생 정보 저장됨");
-          router.refresh();
-        })
-        .catch((error) => setStatusText(error instanceof Error ? error.message : "학생 정보 저장 실패"));
-    });
+    setStatusText("저장 대기");
   }
 
-  function saveMetaClassGroup(row: StudentSheetRow, classGroupId: string) {
+  function setMetaClassGroup(row: StudentSheetRow, classGroupId: string) {
     const key = lessonCellKey(row.id, "classGroup");
     const classGroup = classGroups.find((option) => option.id === classGroupId);
     const classGroupName = classGroup ? classGroup.name : "-";
@@ -997,19 +991,8 @@ export default function StudentLessonSpreadsheet({
     setEditingMetaKey(null);
     setMetaDrafts((current) => ({ ...current, [key]: classGroupName }));
     setClassGroupDraftIds((current) => ({ ...current, [row.id]: classGroupId }));
-
-    const formData = new FormData();
-    formData.set("studentId", row.id);
-    formData.set("classGroupId", classGroupId);
-    setStatusText("반 저장 중");
-    startTransition(() => {
-      void updateStudentClassGroup(formData)
-        .then(() => {
-          setStatusText("반 저장됨");
-          router.refresh();
-        })
-        .catch((error) => setStatusText(error instanceof Error ? error.message : "반 저장 실패"));
-    });
+    setDirtyMetaValues((current) => ({ ...current, [key]: { studentId: row.id, field: "classGroup", value: classGroupId } }));
+    setStatusText("저장 대기");
   }
   function resolveClassGroupInput(value: string) {
     const normalized = value.trim();
@@ -1232,7 +1215,7 @@ export default function StudentLessonSpreadsheet({
     const afterLesson = lessons.find((lesson) => lesson.id === afterLessonId);
     const afterOrder = afterLesson ? lessons.findIndex((lesson) => lesson.id === afterLesson.id) : lessons.length - 1;
     const nextIndex = Math.max(0, ...baseLessons.map((lesson) => lesson.index), ...insertedLessons.map((lesson) => lesson.index)) + 1;
-    const id = `manual_${Date.now()}_${nextIndex}`;
+    const id = `${createLocalId("manual")}_${nextIndex}`;
     const nextDate = afterLesson?.date ? formatDateInput(addDays(parseLocalDate(afterLesson.date), 1)) : "";
     const inserted: InsertedLesson = {
       id,
@@ -1243,7 +1226,7 @@ export default function StudentLessonSpreadsheet({
       startTime: afterLesson?.startTime ?? selectedClassGroup?.startTime ?? "",
       endTime: afterLesson?.endTime ?? selectedClassGroup?.endTime ?? "",
       memo: "",
-      createdAt: Date.now(),
+      createdAt: currentClientTime(),
     };
     pushHistory();
     setInsertedLessons((current) => [...current, inserted]);
@@ -1491,6 +1474,12 @@ export default function StudentLessonSpreadsheet({
     };
   }
 
+  function initialValueFromPrintableKey(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.nativeEvent.isComposing || event.key === "Process") return undefined;
+    if (/^[a-zA-Z]$/.test(event.key)) return undefined;
+    return event.key;
+  }
+
   function handleSheetKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     const key = event.key.toLowerCase();
     const shortcutPressed = event.ctrlKey || event.metaKey;
@@ -1532,6 +1521,7 @@ export default function StudentLessonSpreadsheet({
     if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
       event.preventDefault();
       const firstCell = selectedCells[0];
+      const initialValue = initialValueFromPrintableKey(event);
       if (selectedCells.length > 1) {
         captureRangeEdit(firstCell, selectedCells);
       } else {
@@ -1539,7 +1529,7 @@ export default function StudentLessonSpreadsheet({
       }
       beginEditGridCell(firstCell.rowIndex, firstCell.colIndex, {
         preserveSelection: selectedCells.length > 1,
-        initialValue: event.key,
+        ...(initialValue !== undefined ? { initialValue } : {}),
       });
     }
   }
@@ -2007,40 +1997,49 @@ export default function StudentLessonSpreadsheet({
                       </div>
                       <div style={lessonDateLine}>
                         <input
-                          type="date"
+                          type="text"
                           value={lesson.date ?? ""}
                           onChange={(event) => updateLessonDate(lesson.id, event.target.value)}
                           style={lessonDateInput}
+                          placeholder="YYYY-MM-DD"
                           aria-label={`${label || lesson.defaultLabel} 날짜`}
                           onMouseDown={(event) => event.stopPropagation()}
+                          autoComplete="off"
                         />
                         <input
-                          type="time"
+                          type="text"
                           value={lesson.startTime ?? ""}
                           onChange={(event) => updateLessonTime(lesson.id, "startTime", event.target.value)}
                           style={lessonTimeInput}
+                          placeholder="시작"
                           aria-label={`${label || lesson.defaultLabel} 시작 시간`}
                           onMouseDown={(event) => event.stopPropagation()}
+                          autoComplete="off"
                         />
                         <span style={lessonTimeSeparator}>~</span>
                         <input
-                          type="time"
+                          type="text"
                           value={lesson.endTime ?? ""}
                           onChange={(event) => updateLessonTime(lesson.id, "endTime", event.target.value)}
                           style={lessonTimeInput}
+                          placeholder="종료"
                           aria-label={`${label || lesson.defaultLabel} 종료 시간`}
                           onMouseDown={(event) => event.stopPropagation()}
+                          autoComplete="off"
                         />
                       </div>
-                      <input
-                        value={lesson.memo ?? ""}
-                        onChange={(event) => updateLessonMemo(lesson.id, event.target.value)}
-                        style={lessonMemoInput}
-                        placeholder="진도/메모 입력"
-                        aria-label={`${label || lesson.defaultLabel} 차시 메모`}
-                        onMouseDown={(event) => event.stopPropagation()}
-                        autoComplete="off"
-                      />
+                      <div style={lessonMemoRow}>
+                        <span style={lessonMemoLabel}>진도</span>
+                        <input
+                          value={lesson.memo ?? ""}
+                          onChange={(event) => updateLessonMemo(lesson.id, event.target.value)}
+                          style={lessonMemoInput}
+                          placeholder="진도/메모 입력"
+                          aria-label={`${label || lesson.defaultLabel} 차시 메모`}
+                          onMouseDown={(event) => event.stopPropagation()}
+                          autoComplete="off"
+                        />
+                      </div>
                     </th>
                   );
                 })}
@@ -2121,16 +2120,19 @@ export default function StudentLessonSpreadsheet({
                               value={nameDrafts[row.id] ?? row.name}
                               onChange={(event) => setMetaCell(row, "name", event.target.value)}
                               onBlur={() => {
-                                if (suppressBlurSaveRef.current || activeRangeEditRef.current) {
-                                  activeRangeEditRef.current = null;
+                                activeRangeEditRef.current = null;
+                                if (suppressBlurSaveRef.current) {
                                   setEditingNameId(null);
                                   return;
                                 }
-                                activeRangeEditRef.current = null;
-                                saveName(row);
+                                finishNameEdit(row);
                               }}
                               onKeyDown={(event) => {
-                                if (event.key === "Enter") saveName(row);
+                                if (event.key === "Enter") {
+                                  event.preventDefault();
+                                  activeRangeEditRef.current = null;
+                                  finishNameEdit(row);
+                                }
                                 if (event.key === "Escape") setEditingNameId(null);
                               }}
                               style={nameEditInput}
@@ -2144,7 +2146,7 @@ export default function StudentLessonSpreadsheet({
                                 metaInputRefs.current[key] = node;
                               }}
                               value={classGroupDraftIds[row.id] ?? row.classGroupId ?? ""}
-                              onChange={(event) => saveMetaClassGroup(row, event.target.value)}
+                              onChange={(event) => setMetaClassGroup(row, event.target.value)}
                               onBlur={() => setEditingMetaKey(null)}
                               onKeyDown={(event) => {
                                 if (event.key === "Escape") cancelMetaEdit(row, "classGroup");
@@ -2170,16 +2172,19 @@ export default function StudentLessonSpreadsheet({
                               value={metaDrafts[key] ?? value}
                               onChange={(event) => setMetaCell(row, column.id as Exclude<EditableMetaColumnId, "classGroup">, event.target.value)}
                               onBlur={() => {
-                                if (suppressBlurSaveRef.current || activeRangeEditRef.current) {
-                                  activeRangeEditRef.current = null;
+                                activeRangeEditRef.current = null;
+                                if (suppressBlurSaveRef.current) {
                                   setEditingMetaKey(null);
                                   return;
                                 }
-                                activeRangeEditRef.current = null;
-                                saveMetaText(row, column.id as Exclude<EditableMetaColumnId, "classGroup">);
+                                finishMetaTextEdit(row, column.id as Exclude<EditableMetaColumnId, "classGroup">);
                               }}
                               onKeyDown={(event) => {
-                                if (event.key === "Enter") saveMetaText(row, column.id as Exclude<EditableMetaColumnId, "classGroup">);
+                                if (event.key === "Enter") {
+                                  event.preventDefault();
+                                  activeRangeEditRef.current = null;
+                                  finishMetaTextEdit(row, column.id as Exclude<EditableMetaColumnId, "classGroup">);
+                                }
                                 if (event.key === "Escape") cancelMetaEdit(row, column.id as EditableMetaColumnId);
                               }}
                               onClick={(event) => event.stopPropagation()}
@@ -2256,18 +2261,6 @@ export default function StudentLessonSpreadsheet({
             </table>
           </div>
           <div style={sheetBottomBar}>
-            <button type="button" onClick={addLesson} style={sheetBottomIconButton} title="차시 추가" aria-label="차시 추가">
-              +
-            </button>
-            <button
-              type="button"
-              onClick={() => setLessonPanelOpen((current) => !current)}
-              style={{ ...sheetBottomIconButton, ...(lessonPanelOpen ? sheetBottomIconButtonActive : {}) }}
-              title="차시 선택 열기"
-              aria-label="차시 선택 열기"
-            >
-              ☰
-            </button>
             <nav style={sheetTabs} aria-label="반 시트 탭">
               <Link href="/students?classGroupId=all" style={{ ...sheetTab, ...(!effectiveClassGroupId ? sheetTabActive : {}) }}>
                 전체 학생
@@ -2471,20 +2464,26 @@ function buildLessonsForClass(classGroup: LessonClassGroupOption | null, extraCo
 
 function storedLessons(classGroup: LessonClassGroupOption | null): Lesson[] {
   const stored = classGroup?.lessons ?? [];
+  const fallbackStartTime = classGroup?.startTime ?? undefined;
+  const fallbackEndTime = classGroup?.endTime ?? undefined;
   return [...stored]
     .sort((a, b) => a.position - b.position)
-    .map((lesson, index) => ({
-      id: lesson.id,
-      index: index + 1,
-      defaultLabel: lesson.title,
-      date: lesson.lessonDate ?? undefined,
-      dateLabel: lesson.lessonDate ? formatShortDateFromInput(lesson.lessonDate) : "날짜 미정",
-      scheduleLabel: lesson.startTime || lesson.endTime ? `${lesson.startTime || "--:--"}-${lesson.endTime || "--:--"}` : "",
-      startTime: lesson.startTime ?? undefined,
-      endTime: lesson.endTime ?? undefined,
-      memo: lesson.memo ?? undefined,
-      source: "schedule" as const,
-    }));
+    .map((lesson, index) => {
+      const startTime = lesson.startTime ?? fallbackStartTime;
+      const endTime = lesson.endTime ?? fallbackEndTime;
+      return {
+        id: lesson.id,
+        index: index + 1,
+        defaultLabel: lesson.title,
+        date: lesson.lessonDate ?? undefined,
+        dateLabel: lesson.lessonDate ? formatShortDateFromInput(lesson.lessonDate) : "날짜 미정",
+        scheduleLabel: startTime || endTime ? `${startTime || "--:--"}-${endTime || "--:--"}` : "",
+        startTime,
+        endTime,
+        memo: lesson.memo ?? undefined,
+        source: "schedule" as const,
+      };
+    });
 }
 
 function mergeInsertedLessons(baseLessons: Lesson[], insertedLessons: InsertedLesson[]) {
@@ -3546,29 +3545,6 @@ const sheetBottomBar: CSSProperties = {
   boxShadow: "0 -1px 2px rgba(15, 23, 42, 0.04)",
 };
 
-const sheetBottomIconButton: CSSProperties = {
-  width: 26,
-  height: 26,
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  border: "1px solid #cbd5e1",
-  borderRadius: 6,
-  background: "#ffffff",
-  color: "#334155",
-  fontSize: 16,
-  fontWeight: 900,
-  lineHeight: 1,
-  cursor: "pointer",
-  flex: "0 0 auto",
-};
-
-const sheetBottomIconButtonActive: CSSProperties = {
-  border: "1px solid #2563eb",
-  background: "#dbeafe",
-  color: "#1d4ed8",
-};
-
 const sheetTabs: CSSProperties = {
   display: "flex",
   alignItems: "center",
@@ -3625,7 +3601,7 @@ const stickyTop: CSSProperties = {
   zIndex: 5,
 };
 
-const lessonHeaderStickyTop = 92;
+const lessonHeaderStickyTop = 98;
 
 const sheetTh: CSSProperties = {
   height: 54,
@@ -3678,12 +3654,13 @@ const hiddenHeaderButton: CSSProperties = {
 
 const lessonGroupTh: CSSProperties = {
   height: lessonHeaderStickyTop,
-  padding: "5px 6px",
+  padding: 0,
   borderRight: "2px solid #111827",
   borderBottom: "1px solid #cbd5e1",
   background: "#e7eefc",
   color: "#111827",
   textAlign: "center",
+  verticalAlign: "top",
 };
 
 const sheetSubTh: CSSProperties = {
@@ -3747,7 +3724,8 @@ const lessonHeaderTop: CSSProperties = {
   gridTemplateColumns: "1fr 24px 24px",
   alignItems: "center",
   gap: 4,
-  marginBottom: 4,
+  minHeight: 30,
+  padding: "4px 5px 2px",
 };
 
 const lessonNameInput: CSSProperties = {
@@ -3792,19 +3770,22 @@ const lessonDateLine: CSSProperties = {
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
-  gap: 4,
+  gap: 3,
+  minHeight: 22,
+  padding: "0 5px 2px",
   color: "#334155",
   fontSize: 12,
   fontWeight: 800,
-  marginBottom: 4,
+  borderTop: "1px solid rgba(148, 163, 184, 0.45)",
 };
 
 const lessonDateInput: CSSProperties = {
-  width: 102,
-  height: 22,
-  border: "1px solid #cbd5e1",
-  borderRadius: 5,
-  background: "rgba(255,255,255,0.78)",
+  width: 96,
+  height: 20,
+  border: 0,
+  outline: 0,
+  borderRadius: 0,
+  background: "transparent",
   color: "#334155",
   fontSize: 11,
   fontWeight: 800,
@@ -3813,11 +3794,12 @@ const lessonDateInput: CSSProperties = {
 };
 
 const lessonTimeInput: CSSProperties = {
-  width: 70,
-  height: 22,
-  border: "1px solid #cbd5e1",
-  borderRadius: 5,
-  background: "rgba(255,255,255,0.78)",
+  width: 42,
+  height: 20,
+  border: 0,
+  outline: 0,
+  borderRadius: 0,
+  background: "transparent",
   color: "#334155",
   fontSize: 11,
   fontWeight: 800,
@@ -3831,17 +3813,37 @@ const lessonTimeSeparator: CSSProperties = {
   fontWeight: 900,
 };
 
+const lessonMemoRow: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "34px minmax(0, 1fr)",
+  minHeight: 23,
+  borderTop: "1px solid rgba(148, 163, 184, 0.55)",
+  background: "rgba(248, 250, 252, 0.48)",
+};
+
+const lessonMemoLabel: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  borderRight: "1px solid rgba(148, 163, 184, 0.55)",
+  color: "#334155",
+  fontSize: 11,
+  fontWeight: 900,
+};
+
 const lessonMemoInput: CSSProperties = {
   width: "100%",
+  minWidth: 0,
   height: 22,
-  border: "1px solid #cbd5e1",
-  borderRadius: 5,
+  border: 0,
+  outline: 0,
+  borderRadius: 0,
   padding: "0 6px",
-  background: "rgba(255,255,255,0.78)",
+  background: "transparent",
   color: "#334155",
   fontSize: 11,
   fontWeight: 700,
-  textAlign: "center",
+  textAlign: "left",
   userSelect: "text",
 };
 

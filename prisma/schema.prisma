@@ -31,6 +31,9 @@ model Academy {
   assistantWorkShifts  AssistantWorkShift[]
   calendarPrivateMemos CalendarPrivateMemo[]
   calendarEventMemos   CalendarEventMemo[]
+  announcementMemos    AnnouncementMemo[]
+  announcementReads    AnnouncementRead[]
+  personalStickyMemos  PersonalStickyMemo[]
   omrUploads           OmrUpload[]
   exams                Exam[]
   examResults          ExamResult[]
@@ -92,6 +95,9 @@ model User {
   createdWorkShifts   AssistantWorkShift[] @relation("AssistantWorkShiftCreator")
   calendarPrivateMemos CalendarPrivateMemo[]
   calendarEventMemos   CalendarEventMemo[]
+  announcementMemos    AnnouncementMemo[] @relation("AnnouncementMemoAuthor")
+  announcementReads    AnnouncementRead[]
+  personalStickyMemos  PersonalStickyMemo[]
   counselingRecords CounselingRecord[] @relation("CounselingOwner")
   clinicRecords     ClinicRecord[]     @relation("ClinicOwner")
   questionRecords   QuestionRecord[]   @relation("QuestionOwner")
@@ -595,6 +601,64 @@ model CalendarEventMemo {
   @@unique([academyId, eventKey])
   @@index([academyId, eventDate])
   @@index([writerId])
+}
+
+model AnnouncementMemo {
+  id          String               @id @default(uuid())
+  academyId   String
+  authorId    String
+  title       String
+  content     String
+  priority    AnnouncementPriority @default(NORMAL)
+  isPinned    Boolean              @default(false)
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  academy Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  author  User    @relation("AnnouncementMemoAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  reads   AnnouncementRead[]
+
+  @@index([academyId, isPinned, createdAt])
+  @@index([academyId, priority])
+  @@index([authorId])
+}
+
+model AnnouncementRead {
+  id             String   @id @default(uuid())
+  academyId      String
+  announcementId String
+  userId         String
+  readAt         DateTime @default(now())
+
+  academy      Academy          @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  announcement AnnouncementMemo @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([announcementId, userId])
+  @@index([academyId, userId])
+  @@index([announcementId])
+}
+
+model PersonalStickyMemo {
+  id        String   @id @default(uuid())
+  academyId String
+  userId    String
+  content   String
+  color     String   @default("#FEF3C7")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  academy Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([academyId, userId, updatedAt])
+  @@index([userId])
+}
+
+enum AnnouncementPriority {
+  NORMAL
+  IMPORTANT
+  URGENT
 }
 
 model RecurringTask {

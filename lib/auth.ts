@@ -77,6 +77,10 @@ export function canCreateTask(role: UserRole | string) {
   return role === "ADMIN" || role === "MANAGER" || role === "TEACHER";
 }
 
+export function canManageAnnouncements(role: UserRole | string) {
+  return role === "ADMIN" || role === "MANAGER" || role === "TEACHER";
+}
+
 export function canEditAll(role: UserRole | string) {
   return role === "ADMIN" || role === "MANAGER";
 }
