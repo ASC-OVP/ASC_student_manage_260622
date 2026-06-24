@@ -6,8 +6,9 @@
     "node": ">=20.9.0"
   },
   "scripts": {
-    "dev": "next dev",
-    "dev:prepare": "node scripts/ensure-dev-env.mjs && prisma generate --schema=prisma/schema.prisma && prisma migrate deploy --schema=prisma/schema.prisma",
+    "predev": "npm run dev:prepare",
+    "dev": "next dev -H 0.0.0.0",
+    "dev:prepare": "node scripts/dev-prepare.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
