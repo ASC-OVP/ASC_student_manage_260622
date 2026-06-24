@@ -1656,7 +1656,13 @@ export default function StudentLessonSpreadsheet({
         });
     });
   }
-  const sheetHeight = isFullscreen ? "calc(100vh - 198px)" : "clamp(360px, calc(100vh - 430px), 620px)";
+  const scheduleSummary = selectedClassGroup
+    ? `${selectedClassGroup.startDate || "시작일 없음"} ~ ${selectedClassGroup.endDate || "종료일 없음"} · ${
+        selectedClassGroup.daysOfWeek || selectedClassGroup.schedule || "요일 미정"
+      }`
+    : "반 선택 시 운영기간과 요일 기준으로 차시 자동 생성";
+  const scheduleSummaryStyle = selectedClassGroup && !hasClassSchedule ? warningText : undefined;
+  const sheetHeight = isFullscreen ? "calc(100vh - 138px)" : "100%";
   const deletableContextColumn = contextMenu ? contextTargetCustomColumn() : null;
 
   return (
@@ -1725,6 +1731,7 @@ export default function StudentLessonSpreadsheet({
           <span>{displayRows.length}/{rows.length}명</span>
           <span>{visibleLessons.length}개 차시 표시</span>
           <span>{hasPendingChanges ? [dirtyCount > 0 ? `${dirtyCount}칸 변경` : "", lessonConfigDirty ? "차시 설정 변경" : ""].filter(Boolean).join(" / ") : "변경 없음"}</span>
+          <span style={scheduleSummaryStyle}>{scheduleSummary}</span>
         </div>
 
         <button
@@ -1744,22 +1751,6 @@ export default function StudentLessonSpreadsheet({
         </button>
         <button type="button" onClick={saveChanges} disabled={isPending || !hasPendingChanges} style={primaryButton}>저장</button>
         {statusText && <span style={{ ...saveStatus, ...(isPending ? pendingStatus : {}) }}>{statusText}</span>}
-      </div>
-
-      <div style={classNotice}>
-        {selectedClassGroup ? (
-          <>
-            <b>반 일정 기준 차시</b>
-            <span>{selectedClassGroup.startDate || "시작일 없음"} ~ {selectedClassGroup.endDate || "종료일 없음"}</span>
-            <span>{selectedClassGroup.daysOfWeek || selectedClassGroup.schedule || "요일 미정"}</span>
-            {!hasClassSchedule && <span style={warningText}>운영 시작일과 수업 요일을 입력하면 날짜별 차시가 자동 생성됩니다.</span>}
-          </>
-        ) : (
-          <>
-            <b>전체 학생 보기</b>
-            <span>반을 선택하면 해당 반의 운영기간과 요일에 맞춰 차시가 자동으로 나옵니다.</span>
-          </>
-        )}
       </div>
 
       <div style={toolbar}>
@@ -1808,9 +1799,6 @@ export default function StudentLessonSpreadsheet({
           <option value="center">가운데</option>
           <option value="right">오른쪽</option>
         </select>
-      </div>
-
-      <div style={toolbar}>
         <span style={selectedColumnPill}>검색 대상: {searchTargetLabel}</span>
         <input
           ref={searchInputRef}
@@ -2170,7 +2158,7 @@ export default function StudentLessonSpreadsheet({
             </table>
           </div>
           <div style={sheetBottomBar}>
-            <button type="button" onClick={addLesson} style={sheetBottomIconButton} title="차시 추가">
+            <button type="button" onClick={addLesson} style={sheetBottomIconButton} title="차시 추가" aria-label="차시 추가">
               +
             </button>
             <button
@@ -2178,6 +2166,7 @@ export default function StudentLessonSpreadsheet({
               onClick={() => setLessonPanelOpen((current) => !current)}
               style={{ ...sheetBottomIconButton, ...(lessonPanelOpen ? sheetBottomIconButtonActive : {}) }}
               title="차시 선택 열기"
+              aria-label="차시 선택 열기"
             >
               ☰
             </button>
@@ -2922,8 +2911,12 @@ function ColorPaletteDropdown({
   );
 }
 const shell: CSSProperties = {
+  height: "100%",
+  minHeight: 0,
+  display: "grid",
+  gridTemplateRows: "auto auto auto minmax(0, 1fr)",
   border: "1px solid #d7dce5",
-  borderRadius: 10,
+  borderRadius: 8,
   background: "#ffffff",
   overflow: "hidden",
   boxShadow: "0 1px 2px rgba(15, 23, 42, 0.04)",
@@ -2933,6 +2926,7 @@ const fullscreenShell: CSSProperties = {
   position: "fixed",
   inset: 0,
   zIndex: 1000,
+  height: "100vh",
   borderRadius: 0,
   border: 0,
   boxShadow: "none",
@@ -2941,11 +2935,12 @@ const fullscreenShell: CSSProperties = {
 const menuBar: CSSProperties = {
   display: "flex",
   alignItems: "center",
-  gap: 8,
-  padding: "6px 10px",
+  gap: 6,
+  flexWrap: "wrap",
+  padding: "4px 8px",
   borderBottom: "1px solid #e5e7eb",
   background: "#f8fafc",
-  fontSize: 13,
+  fontSize: 12,
 };
 
 const undoRedoGroup: CSSProperties = {
@@ -3070,9 +3065,9 @@ const selectionBadge: CSSProperties = {
 const toolbar: CSSProperties = {
   display: "flex",
   alignItems: "center",
-  gap: 8,
+  gap: 6,
   flexWrap: "wrap",
-  padding: "8px 10px",
+  padding: "5px 8px",
   borderBottom: "1px solid #e5e7eb",
   background: "#ffffff",
 };
@@ -3087,30 +3082,19 @@ const sheetMeta: CSSProperties = {
   fontSize: 13,
 };
 
-const classNotice: CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: 10,
-  flexWrap: "wrap",
-  padding: "7px 10px",
-  borderBottom: "1px solid #e5e7eb",
-  background: "#f8fafc",
-  color: "#475569",
-  fontSize: 12,
-};
-
 const warningText: CSSProperties = {
   color: "#b45309",
   fontWeight: 700,
 };
 
 const toolbarButton: CSSProperties = {
-  height: 30,
-  padding: "0 10px",
+  height: 28,
+  padding: "0 9px",
   border: "1px solid #d1d5db",
-  borderRadius: 7,
+  borderRadius: 6,
   background: "#ffffff",
   color: "#111827",
+  fontSize: 12,
   fontWeight: 700,
   cursor: "pointer",
 };
@@ -3147,22 +3131,22 @@ const pendingStatus: CSSProperties = {
 };
 
 const toolbarInput: CSSProperties = {
-  height: 30,
+  height: 28,
   minWidth: 120,
   padding: "0 8px",
   border: "1px solid #d1d5db",
-  borderRadius: 7,
+  borderRadius: 6,
   background: "#ffffff",
-  fontSize: 13,
+  fontSize: 12,
 };
 
 const compactSelect: CSSProperties = {
-  height: 30,
+  height: 28,
   padding: "0 8px",
   border: "1px solid #d1d5db",
-  borderRadius: 7,
+  borderRadius: 6,
   background: "#ffffff",
-  fontSize: 13,
+  fontSize: 12,
 };
 
 const colorMenu: CSSProperties = {
@@ -3171,7 +3155,7 @@ const colorMenu: CSSProperties = {
 };
 
 const colorTrigger: CSSProperties = {
-  height: 30,
+  height: 28,
   display: "inline-flex",
   alignItems: "center",
   gap: 6,
@@ -3272,7 +3256,7 @@ const selectedColumnPill: CSSProperties = {
 };
 const contentGrid: CSSProperties = {
   display: "grid",
-  alignItems: "start",
+  alignItems: "stretch",
   gap: 0,
   minHeight: 0,
 };
@@ -3288,15 +3272,15 @@ const sheetPane: CSSProperties = {
 
 const lessonPanel: CSSProperties = {
   position: "sticky",
-  top: 8,
-  alignSelf: "start",
+  top: 0,
+  alignSelf: "stretch",
   display: "grid",
   gridTemplateRows: "auto auto auto minmax(0, 1fr)",
   borderLeft: "1px solid #d7dce5",
   background: "#f8fafc",
   padding: 10,
   overflow: "hidden",
-  maxHeight: "calc(100vh - 244px)",
+  maxHeight: "100%",
 };
 
 const panelHead: CSSProperties = {
@@ -3422,6 +3406,8 @@ const sheetWrap: CSSProperties = {
   overflow: "auto",
   minHeight: 0,
   background: "#ffffff",
+  backgroundImage: "linear-gradient(#eef2f7 1px, transparent 1px)",
+  backgroundSize: "100% 34px",
   userSelect: "none",
 };
 
@@ -3429,24 +3415,24 @@ const sheetBottomBar: CSSProperties = {
   position: "sticky",
   bottom: 0,
   zIndex: 12,
-  minHeight: 40,
+  minHeight: 34,
   display: "flex",
   alignItems: "center",
   gap: 6,
-  padding: "5px 8px",
+  padding: "3px 6px",
   borderTop: "1px solid #d7dce5",
   background: "#f8fafc",
   boxShadow: "0 -1px 2px rgba(15, 23, 42, 0.04)",
 };
 
 const sheetBottomIconButton: CSSProperties = {
-  width: 28,
-  height: 28,
+  width: 26,
+  height: 26,
   display: "inline-flex",
   alignItems: "center",
   justifyContent: "center",
   border: "1px solid #cbd5e1",
-  borderRadius: 7,
+  borderRadius: 6,
   background: "#ffffff",
   color: "#334155",
   fontSize: 16,
@@ -3473,13 +3459,13 @@ const sheetTabs: CSSProperties = {
 };
 
 const sheetTab: CSSProperties = {
-  height: 28,
+  height: 26,
   display: "inline-flex",
   alignItems: "center",
   maxWidth: 180,
   padding: "0 12px",
   border: "1px solid #d1d5db",
-  borderRadius: 7,
+  borderRadius: 6,
   background: "#ffffff",
   color: "#475569",
   fontSize: 12,

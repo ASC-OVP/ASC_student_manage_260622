@@ -129,10 +129,10 @@ export default async function StudentsPage({ searchParams }: Props) {
     <main style={page}>
       <section style={container}>
         <header style={header}>
-          <div>
+          <div style={headingRow}>
             <p style={eyebrow}>학생 현황판</p>
             <h1 style={title}>스프레드시트 학생 관리</h1>
-            <p style={desc}>반별 학생 정보와 날짜별 차시 기록을 한 표에서 바로 수정합니다.</p>
+            <span style={desc}>반별 학생 정보와 날짜별 차시 기록</span>
           </div>
           <div style={headerActions}>
             <StudentClassGroupSelect selectedId={effectiveClassGroupId} classGroups={classGroupOptions} />
@@ -164,22 +164,46 @@ function sheetOptionLabel(options: Array<{ value: string; label: string }>, valu
   return options.find((option) => option.value === value)?.label ?? value;
 }
 
-const page: CSSProperties = { minHeight: "100vh", background: "#f3f4f6", color: "#111827" };
-const container: CSSProperties = { width: "100%", maxWidth: "none", margin: 0, padding: 10, display: "grid", gap: 8 };
+const page: CSSProperties = { height: "100vh", minHeight: 0, overflow: "hidden", background: "#f3f4f6", color: "#111827" };
+const container: CSSProperties = {
+  width: "100%",
+  height: "100%",
+  maxWidth: "none",
+  margin: 0,
+  padding: 6,
+  display: "grid",
+  gridTemplateRows: "auto minmax(0, 1fr)",
+  gap: 6,
+  minHeight: 0,
+};
 const header: CSSProperties = {
   display: "flex",
   justifyContent: "space-between",
   alignItems: "center",
   gap: 12,
+  flexWrap: "wrap",
   background: "#fff",
   border: "1px solid #e5e7eb",
-  borderRadius: 10,
-  padding: "10px 12px",
+  borderRadius: 8,
+  padding: "6px 10px",
 };
-const eyebrow: CSSProperties = { margin: 0, color: "#2563eb", fontSize: 12, fontWeight: 900 };
-const title: CSSProperties = { margin: "2px 0", fontSize: 22, fontWeight: 950 };
-const desc: CSSProperties = { margin: 0, color: "#6b7280", fontSize: 13 };
-const addButton: CSSProperties = { background: "#111827", color: "#fff", borderRadius: 8, padding: "9px 12px", textDecoration: "none", fontWeight: 900, whiteSpace: "nowrap" };
+const headingRow: CSSProperties = { display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", minWidth: 0 };
+const eyebrow: CSSProperties = { margin: 0, color: "#2563eb", fontSize: 11, fontWeight: 900 };
+const title: CSSProperties = { margin: 0, fontSize: 20, fontWeight: 950, lineHeight: 1.1 };
+const desc: CSSProperties = { color: "#6b7280", fontSize: 12, fontWeight: 700 };
+const addButton: CSSProperties = {
+  height: 30,
+  display: "inline-flex",
+  alignItems: "center",
+  background: "#111827",
+  color: "#fff",
+  borderRadius: 7,
+  padding: "0 11px",
+  textDecoration: "none",
+  fontSize: 13,
+  fontWeight: 900,
+  whiteSpace: "nowrap",
+};
 const headerActions: CSSProperties = {
   display: "flex",
   alignItems: "center",

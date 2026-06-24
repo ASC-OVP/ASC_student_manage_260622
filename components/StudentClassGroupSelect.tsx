@@ -38,12 +38,12 @@ export default function StudentClassGroupSelect({ selectedId, classGroups }: Pro
 
 const select: CSSProperties = {
   minWidth: 190,
-  height: 34,
+  height: 30,
   border: "1px solid #d1d5db",
-  borderRadius: 8,
-  padding: "0 10px",
+  borderRadius: 7,
+  padding: "0 9px",
   background: "#ffffff",
   color: "#111827",
-  fontSize: 13,
+  fontSize: 12,
   fontWeight: 800,
 };
