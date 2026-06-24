@@ -35,7 +35,7 @@ export default async function StudentsPage({ searchParams }: Props) {
         teacher: { select: { id: true, name: true } },
         lessons: {
           orderBy: { position: "asc" },
-          select: { id: true, position: true, title: true, lessonDate: true, startTime: true, endTime: true },
+          select: { id: true, position: true, title: true, lessonDate: true, startTime: true, endTime: true, memo: true },
         },
       },
     }),

@@ -36,6 +36,7 @@ export type StoredClassLesson = {
   lessonDate?: string | null;
   startTime?: string | null;
   endTime?: string | null;
+  memo?: string | null;
 };
 
 type Props = {
@@ -64,6 +65,7 @@ type Lesson = {
   scheduleLabel: string;
   startTime?: string;
   endTime?: string;
+  memo?: string;
   source: "schedule" | "manual" | "fallback";
 };
 
@@ -73,6 +75,9 @@ type InsertedLesson = {
   afterId: string | null;
   label: string;
   date: string;
+  startTime: string;
+  endTime: string;
+  memo: string;
   createdAt: number;
 };
 
@@ -139,6 +144,8 @@ type SheetHistorySnapshot = {
   cellStyles: Record<string, CellStyle>;
   lessonLabels: Record<string, string>;
   lessonDateOverrides: Record<string, string>;
+  lessonTimeOverrides: Record<string, LessonTimeOverride>;
+  lessonMemoOverrides: Record<string, string>;
   insertedLessons: InsertedLesson[];
   deletedLessonIds: string[];
   visibleLessonIds: string[];
@@ -150,6 +157,11 @@ type SheetHistorySnapshot = {
   classGroupDraftIds: Record<string, string>;
   customColumnDrafts: Record<string, string>;
   formatDraft: CellStyle;
+};
+
+type LessonTimeOverride = {
+  startTime: string;
+  endTime: string;
 };
 
 type ColorPaletteItem = {
@@ -250,6 +262,8 @@ export default function StudentLessonSpreadsheet({
   const [extraLessonCount, setExtraLessonCount] = useState(0);
   const [lessonLabels, setLessonLabels] = useState<Record<string, string>>({});
   const [lessonDateOverrides, setLessonDateOverrides] = useState<Record<string, string>>({});
+  const [lessonTimeOverrides, setLessonTimeOverrides] = useState<Record<string, LessonTimeOverride>>({});
+  const [lessonMemoOverrides, setLessonMemoOverrides] = useState<Record<string, string>>({});
   const [insertedLessons, setInsertedLessons] = useState<InsertedLesson[]>([]);
   const [deletedLessonIds, setDeletedLessonIds] = useState<string[]>([]);
   const [lessonConfigDirty, setLessonConfigDirty] = useState(false);
@@ -315,8 +329,13 @@ export default function StudentLessonSpreadsheet({
 
   const lessons = useMemo(() => {
     const deleted = new Set(deletedLessonIds);
-    return applyLessonDateOverrides(mergeInsertedLessons(baseLessons, insertedLessons).filter((lesson) => !deleted.has(lesson.id)), lessonDateOverrides);
-  }, [baseLessons, deletedLessonIds, insertedLessons, lessonDateOverrides]);
+    return applyLessonOverrides(
+      mergeInsertedLessons(baseLessons, insertedLessons).filter((lesson) => !deleted.has(lesson.id)),
+      lessonDateOverrides,
+      lessonTimeOverrides,
+      lessonMemoOverrides
+    );
+  }, [baseLessons, deletedLessonIds, insertedLessons, lessonDateOverrides, lessonMemoOverrides, lessonTimeOverrides]);
 
   const activeVisibleLessonIds = useMemo(() => {
     const allowed = new Set(lessons.map((lesson) => lesson.id));
@@ -398,6 +417,8 @@ export default function StudentLessonSpreadsheet({
       setExtraLessonCount(readStoredNumber(extraLessonCountKey(scope)) ?? 0);
       setLessonLabels({});
       setLessonDateOverrides({});
+      setLessonTimeOverrides({});
+      setLessonMemoOverrides({});
       setInsertedLessons([]);
       setDeletedLessonIds([]);
       setLessonConfigDirty(false);
@@ -593,6 +614,8 @@ export default function StudentLessonSpreadsheet({
       cellStyles: Object.fromEntries(Object.entries(cellStyles).map(([key, style]) => [key, { ...style }])),
       lessonLabels: { ...lessonLabels },
       lessonDateOverrides: { ...lessonDateOverrides },
+      lessonTimeOverrides: Object.fromEntries(Object.entries(lessonTimeOverrides).map(([key, value]) => [key, { ...value }])),
+      lessonMemoOverrides: { ...lessonMemoOverrides },
       insertedLessons: insertedLessons.map((lesson) => ({ ...lesson })),
       deletedLessonIds: [...deletedLessonIds],
       visibleLessonIds: [...visibleLessonIds],
@@ -616,6 +639,8 @@ export default function StudentLessonSpreadsheet({
     setCellStyles(snapshot.cellStyles);
     setLessonLabels(snapshot.lessonLabels);
     setLessonDateOverrides(snapshot.lessonDateOverrides);
+    setLessonTimeOverrides(snapshot.lessonTimeOverrides);
+    setLessonMemoOverrides(snapshot.lessonMemoOverrides);
     setInsertedLessons(snapshot.insertedLessons);
     setDeletedLessonIds(snapshot.deletedLessonIds);
     setVisibleLessonIds(snapshot.visibleLessonIds);
@@ -1062,6 +1087,36 @@ export default function StudentLessonSpreadsheet({
     setStatusText("차시 날짜 변경됨 - 저장 필요");
   }
 
+  function updateLessonTime(lessonId: string, field: keyof LessonTimeOverride, value: string) {
+    const lesson = lessons.find((item) => item.id === lessonId);
+    if (!lesson) return;
+    pushHistory();
+    setLessonTimeOverrides((current) => {
+      const previous = current[lessonId] ?? {
+        startTime: lesson.startTime ?? "",
+        endTime: lesson.endTime ?? "",
+      };
+      return {
+        ...current,
+        [lessonId]: {
+          ...previous,
+          [field]: value,
+        },
+      };
+    });
+    setLessonConfigDirty(true);
+    setStatusText("차시 시간 변경됨 - 저장 필요");
+  }
+
+  function updateLessonMemo(lessonId: string, value: string) {
+    const lesson = lessons.find((item) => item.id === lessonId);
+    if (!lesson) return;
+    pushHistory();
+    setLessonMemoOverrides((current) => ({ ...current, [lessonId]: value.slice(0, 500) }));
+    setLessonConfigDirty(true);
+    setStatusText("차시 메모 변경됨 - 저장 필요");
+  }
+
   function applyValueToSelection(value: string) {
     const cells = selectedEditableCells(selection, displayRows, gridColumns);
     if (cells.length === 0) return;
@@ -1185,12 +1240,16 @@ export default function StudentLessonSpreadsheet({
       afterId: afterLessonId,
       label: `${Math.max(1, afterOrder + 2)}차시`,
       date: nextDate,
+      startTime: afterLesson?.startTime ?? selectedClassGroup?.startTime ?? "",
+      endTime: afterLesson?.endTime ?? selectedClassGroup?.endTime ?? "",
+      memo: "",
       createdAt: Date.now(),
     };
     pushHistory();
     setInsertedLessons((current) => [...current, inserted]);
     setLessonLabels((current) => ({ ...current, [id]: inserted.label }));
     if (nextDate) setLessonDateOverrides((current) => ({ ...current, [id]: nextDate }));
+    setLessonTimeOverrides((current) => ({ ...current, [id]: { startTime: inserted.startTime, endTime: inserted.endTime } }));
     setVisibleLessonIds((current) => (current.length > 0 ? [...new Set([...current, id])] : current));
     setLessonConfigDirty(true);
     setStatusText("차시가 추가됨 - 저장 필요");
@@ -1213,6 +1272,16 @@ export default function StudentLessonSpreadsheet({
       return next;
     });
     setLessonDateOverrides((current) => {
+      const next = { ...current };
+      delete next[lessonId];
+      return next;
+    });
+    setLessonTimeOverrides((current) => {
+      const next = { ...current };
+      delete next[lessonId];
+      return next;
+    });
+    setLessonMemoOverrides((current) => {
       const next = { ...current };
       delete next[lessonId];
       return next;
@@ -1610,6 +1679,7 @@ export default function StudentLessonSpreadsheet({
             date: lesson.date ?? "",
             startTime: lesson.startTime ?? "",
             endTime: lesson.endTime ?? "",
+            memo: lesson.memo ?? "",
           }))
         )
       );
@@ -1643,6 +1713,8 @@ export default function StudentLessonSpreadsheet({
             setExtraLessonCount(0);
             setLessonLabels({});
             setLessonDateOverrides({});
+            setLessonTimeOverrides({});
+            setLessonMemoOverrides({});
             setInsertedLessons([]);
             setDeletedLessonIds([]);
             setVisibleLessonIds([]);
@@ -1940,9 +2012,35 @@ export default function StudentLessonSpreadsheet({
                           onChange={(event) => updateLessonDate(lesson.id, event.target.value)}
                           style={lessonDateInput}
                           aria-label={`${label || lesson.defaultLabel} 날짜`}
+                          onMouseDown={(event) => event.stopPropagation()}
                         />
-                        {lesson.scheduleLabel && <span>{lesson.scheduleLabel}</span>}
+                        <input
+                          type="time"
+                          value={lesson.startTime ?? ""}
+                          onChange={(event) => updateLessonTime(lesson.id, "startTime", event.target.value)}
+                          style={lessonTimeInput}
+                          aria-label={`${label || lesson.defaultLabel} 시작 시간`}
+                          onMouseDown={(event) => event.stopPropagation()}
+                        />
+                        <span style={lessonTimeSeparator}>~</span>
+                        <input
+                          type="time"
+                          value={lesson.endTime ?? ""}
+                          onChange={(event) => updateLessonTime(lesson.id, "endTime", event.target.value)}
+                          style={lessonTimeInput}
+                          aria-label={`${label || lesson.defaultLabel} 종료 시간`}
+                          onMouseDown={(event) => event.stopPropagation()}
+                        />
                       </div>
+                      <input
+                        value={lesson.memo ?? ""}
+                        onChange={(event) => updateLessonMemo(lesson.id, event.target.value)}
+                        style={lessonMemoInput}
+                        placeholder="진도/메모 입력"
+                        aria-label={`${label || lesson.defaultLabel} 차시 메모`}
+                        onMouseDown={(event) => event.stopPropagation()}
+                        autoComplete="off"
+                      />
                     </th>
                   );
                 })}
@@ -1955,7 +2053,7 @@ export default function StudentLessonSpreadsheet({
                     const isSearchColumn = effectiveColumnSearchId === subColumnId && isFullColumnSelected(selection, subColIndex, displayRows.length);
                     const isSortColumn = sortColumnId === subColumnId;
                     return (
-                      <th key={`${lesson.id}-${field.id}`} style={{ ...sheetSubTh, top: 50, minWidth: field.width, width: field.width }}>
+                      <th key={`${lesson.id}-${field.id}`} style={{ ...sheetSubTh, top: lessonHeaderStickyTop, minWidth: field.width, width: field.width }}>
                         <div style={subHeaderInner}>
                           <button
                             type="button"
@@ -2351,6 +2449,9 @@ function buildLessonsForClass(classGroup: LessonClassGroupOption | null, extraCo
   const baseLessons = scheduled.length > 0 ? scheduled : fallbackLessons(baseCount, classGroup ? "manual" : "fallback");
   const totalCount = Math.min(maxGeneratedLessons, baseLessons.length + extraCount);
   const lessons = [...baseLessons];
+  const fallbackStartTime = classGroup?.startTime ?? "";
+  const fallbackEndTime = classGroup?.endTime ?? "";
+  const fallbackScheduleLabel = fallbackStartTime || fallbackEndTime ? `${fallbackStartTime || "--:--"}-${fallbackEndTime || "--:--"}` : "";
 
   for (let index = lessons.length + 1; index <= totalCount; index += 1) {
     lessons.push({
@@ -2358,7 +2459,9 @@ function buildLessonsForClass(classGroup: LessonClassGroupOption | null, extraCo
       index,
       defaultLabel: customColumns.find((column) => column.id === legacyLessonId(index))?.label || `${index}차시`,
       dateLabel: "날짜 미정",
-      scheduleLabel: "",
+      scheduleLabel: fallbackScheduleLabel,
+      startTime: fallbackStartTime || undefined,
+      endTime: fallbackEndTime || undefined,
       source: "manual",
     });
   }
@@ -2379,6 +2482,7 @@ function storedLessons(classGroup: LessonClassGroupOption | null): Lesson[] {
       scheduleLabel: lesson.startTime || lesson.endTime ? `${lesson.startTime || "--:--"}-${lesson.endTime || "--:--"}` : "",
       startTime: lesson.startTime ?? undefined,
       endTime: lesson.endTime ?? undefined,
+      memo: lesson.memo ?? undefined,
       source: "schedule" as const,
     }));
 }
@@ -2406,7 +2510,10 @@ function mergeInsertedLessons(baseLessons: Lesson[], insertedLessons: InsertedLe
         defaultLabel: inserted.label,
         date: inserted.date || undefined,
         dateLabel: inserted.date ? formatShortDateFromInput(inserted.date) : "날짜 미정",
-        scheduleLabel: "",
+        scheduleLabel: inserted.startTime || inserted.endTime ? `${inserted.startTime || "--:--"}-${inserted.endTime || "--:--"}` : "",
+        startTime: inserted.startTime || undefined,
+        endTime: inserted.endTime || undefined,
+        memo: inserted.memo || undefined,
         source: "manual",
       });
       appendInserted(inserted.id);
@@ -2424,14 +2531,30 @@ function mergeInsertedLessons(baseLessons: Lesson[], insertedLessons: InsertedLe
   return result;
 }
 
-function applyLessonDateOverrides(lessons: Lesson[], overrides: Record<string, string>) {
+function applyLessonOverrides(
+  lessons: Lesson[],
+  dateOverrides: Record<string, string>,
+  timeOverrides: Record<string, LessonTimeOverride>,
+  memoOverrides: Record<string, string>
+) {
   return lessons.map((lesson) => {
-    if (!Object.prototype.hasOwnProperty.call(overrides, lesson.id)) return lesson;
-    const date = overrides[lesson.id];
+    const hasDate = Object.prototype.hasOwnProperty.call(dateOverrides, lesson.id);
+    const hasTime = Object.prototype.hasOwnProperty.call(timeOverrides, lesson.id);
+    const hasMemo = Object.prototype.hasOwnProperty.call(memoOverrides, lesson.id);
+    if (!hasDate && !hasTime && !hasMemo) return lesson;
+
+    const date = hasDate ? dateOverrides[lesson.id] : lesson.date ?? "";
+    const time = hasTime ? timeOverrides[lesson.id] : { startTime: lesson.startTime ?? "", endTime: lesson.endTime ?? "" };
+    const memo = hasMemo ? memoOverrides[lesson.id] : lesson.memo ?? "";
+
     return {
       ...lesson,
       date: date || undefined,
       dateLabel: date ? formatShortDateFromInput(date) : "날짜 미정",
+      startTime: time.startTime || undefined,
+      endTime: time.endTime || undefined,
+      scheduleLabel: time.startTime || time.endTime ? `${time.startTime || "--:--"}-${time.endTime || "--:--"}` : "",
+      memo,
     };
   });
 }
@@ -3502,6 +3625,8 @@ const stickyTop: CSSProperties = {
   zIndex: 5,
 };
 
+const lessonHeaderStickyTop = 92;
+
 const sheetTh: CSSProperties = {
   height: 54,
   padding: "6px 6px",
@@ -3552,8 +3677,8 @@ const hiddenHeaderButton: CSSProperties = {
 };
 
 const lessonGroupTh: CSSProperties = {
-  height: 50,
-  padding: "4px 6px",
+  height: lessonHeaderStickyTop,
+  padding: "5px 6px",
   borderRight: "2px solid #111827",
   borderBottom: "1px solid #cbd5e1",
   background: "#e7eefc",
@@ -3622,6 +3747,7 @@ const lessonHeaderTop: CSSProperties = {
   gridTemplateColumns: "1fr 24px 24px",
   alignItems: "center",
   gap: 4,
+  marginBottom: 4,
 };
 
 const lessonNameInput: CSSProperties = {
@@ -3663,25 +3789,58 @@ const deleteLessonButton: CSSProperties = {
 };
 
 const lessonDateLine: CSSProperties = {
-  marginTop: 2,
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
-  gap: 5,
+  gap: 4,
   color: "#334155",
   fontSize: 12,
   fontWeight: 800,
+  marginBottom: 4,
 };
 
 const lessonDateInput: CSSProperties = {
-  width: 112,
+  width: 102,
   height: 22,
   border: "1px solid #cbd5e1",
   borderRadius: 5,
-  background: "#ffffff",
+  background: "rgba(255,255,255,0.78)",
   color: "#334155",
   fontSize: 11,
   fontWeight: 800,
+  textAlign: "center",
+  userSelect: "text",
+};
+
+const lessonTimeInput: CSSProperties = {
+  width: 70,
+  height: 22,
+  border: "1px solid #cbd5e1",
+  borderRadius: 5,
+  background: "rgba(255,255,255,0.78)",
+  color: "#334155",
+  fontSize: 11,
+  fontWeight: 800,
+  textAlign: "center",
+  userSelect: "text",
+};
+
+const lessonTimeSeparator: CSSProperties = {
+  color: "#64748b",
+  fontSize: 11,
+  fontWeight: 900,
+};
+
+const lessonMemoInput: CSSProperties = {
+  width: "100%",
+  height: 22,
+  border: "1px solid #cbd5e1",
+  borderRadius: 5,
+  padding: "0 6px",
+  background: "rgba(255,255,255,0.78)",
+  color: "#334155",
+  fontSize: 11,
+  fontWeight: 700,
   textAlign: "center",
   userSelect: "text",
 };

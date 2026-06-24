@@ -31,6 +31,7 @@ type ClassLessonInput = {
   date: string | null;
   startTime: string | null;
   endTime: string | null;
+  memo: string | null;
 };
 
 function text(formData: FormData, key: string) {
@@ -1417,11 +1418,12 @@ export async function saveClassLessonConfig(formData: FormData) {
   const lessons = parsed
     .map((item, index): ClassLessonInput | null => {
       if (!item || typeof item !== "object") return null;
-      const raw = item as { title?: unknown; date?: unknown; startTime?: unknown; endTime?: unknown };
+      const raw = item as { title?: unknown; date?: unknown; startTime?: unknown; endTime?: unknown; memo?: unknown };
       const title = String(raw.title ?? "").slice(0, 80);
       const date = String(raw.date ?? "").trim();
       const startTime = String(raw.startTime ?? "").trim();
       const endTime = String(raw.endTime ?? "").trim();
+      const memo = String(raw.memo ?? "").trim().slice(0, 500);
       if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
       if (startTime && !/^\d{2}:\d{2}$/.test(startTime)) return null;
       if (endTime && !/^\d{2}:\d{2}$/.test(endTime)) return null;
@@ -1432,6 +1434,7 @@ export async function saveClassLessonConfig(formData: FormData) {
         date: date || null,
         startTime: startTime || null,
         endTime: endTime || null,
+        memo: memo || null,
       };
     })
     .filter((lesson): lesson is ClassLessonInput => lesson !== null);
@@ -1445,8 +1448,8 @@ export async function saveClassLessonConfig(formData: FormData) {
 
     for (const lesson of lessons) {
       await tx.$executeRaw`
-        INSERT INTO "ClassLesson" ("id", "academyId", "classGroupId", "position", "title", "lessonDate", "startTime", "endTime", "createdAt", "updatedAt")
-        VALUES (${lesson.id}, ${user.academyId}, ${classGroupId}, ${lesson.position}, ${lesson.title}, ${lesson.date}, ${lesson.startTime}, ${lesson.endTime}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        INSERT INTO "ClassLesson" ("id", "academyId", "classGroupId", "position", "title", "lessonDate", "startTime", "endTime", "memo", "createdAt", "updatedAt")
+        VALUES (${lesson.id}, ${user.academyId}, ${classGroupId}, ${lesson.position}, ${lesson.title}, ${lesson.date}, ${lesson.startTime}, ${lesson.endTime}, ${lesson.memo}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
       `;
     }
   });
