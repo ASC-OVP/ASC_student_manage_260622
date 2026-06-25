@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
+  createStudentFromSheet,
   deleteStudentsFromSheet,
   saveClassLessonConfig,
   updateStudentClassGroup,
@@ -81,9 +82,15 @@ type InsertedLesson = {
   createdAt: number;
 };
 
+type DraftStudentRow = StudentSheetRow & {
+  isDraft: true;
+  afterRowId: string | null;
+  createdAt: number;
+};
+
 type GridColumn =
   | { id: MetaColumnId; label: string; kind: "meta"; width: number }
-  | { id: string; label: string; kind: "custom"; width: number; customColumnId: string }
+  | { id: string; label: string; kind: "custom"; width: number; customColumnId: string; afterColumnId?: string | null }
   | {
       id: string;
       label: string;
@@ -152,6 +159,7 @@ type SheetHistorySnapshot = {
   extraLessonCount: number;
   lessonConfigDirty: boolean;
   localCustomColumns: SheetCustomColumn[];
+  draftRows: DraftStudentRow[];
   nameDrafts: Record<string, string>;
   metaDrafts: Record<string, string>;
   classGroupDraftIds: Record<string, string>;
@@ -184,6 +192,10 @@ function currentClientTime() {
   return new Date().getTime();
 }
 
+function isDraftStudentRow(row: StudentSheetRow): row is DraftStudentRow {
+  return (row as Partial<DraftStudentRow>).isDraft === true;
+}
+
 const lessonFields: LessonField[] = [
   { id: "attendance", label: "출결", width: 92 },
   { id: "assignment", label: "과제", width: 104 },
@@ -206,6 +218,8 @@ const metaColumns: Array<Extract<GridColumn, { kind: "meta" }>> = [
 const fallbackLessonCount = 12;
 const maxGeneratedLessons = 80;
 const historyLimit = 80;
+const sheetZoomStorageKey = "asc-students-sheet-zoom";
+const sheetZoomLevels = [75, 90, 100, 110, 125, 150] as const;
 const fillPalette: ColorPaletteItem[] = [
   { label: "검정", value: "#000000" },
   { label: "진회색", value: "#404040" },
@@ -280,6 +294,7 @@ export default function StudentLessonSpreadsheet({
   const [deletedLessonIds, setDeletedLessonIds] = useState<string[]>([]);
   const [lessonConfigDirty, setLessonConfigDirty] = useState(false);
   const [localCustomColumns, setLocalCustomColumns] = useState<SheetCustomColumn[]>(customColumns);
+  const [draftRows, setDraftRows] = useState<DraftStudentRow[]>([]);
   const [visibleLessonIds, setVisibleLessonIds] = useState<string[]>([]);
   const [lessonPanelOpen, setLessonPanelOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -302,12 +317,17 @@ export default function StudentLessonSpreadsheet({
   const [isDragging, setIsDragging] = useState(false);
   const [dragMode, setDragMode] = useState<DragMode>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [replaceDialogOpen, setReplaceDialogOpen] = useState(false);
+  const [replaceFindText, setReplaceFindText] = useState("");
+  const [replaceWithText, setReplaceWithText] = useState("");
+  const [replaceCaseSensitive, setReplaceCaseSensitive] = useState(false);
   const [fillPaletteOpen, setFillPaletteOpen] = useState(false);
   const [columnSearchId, setColumnSearchId] = useState<string>("name");
   const [columnSearch, setColumnSearch] = useState("");
   const [searchFocusTick, setSearchFocusTick] = useState(0);
   const [sortColumnId, setSortColumnId] = useState<string>("name");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+  const [sheetZoom, setSheetZoom] = useState(() => normalizeSheetZoom(readStoredNumber(sheetZoomStorageKey) ?? 100));
   const [formatDraft, setFormatDraft] = useState<CellStyle>({
     fill: "#ffffff",
     fontFamily: "Arial",
@@ -372,7 +392,7 @@ export default function StudentLessonSpreadsheet({
 
   const gridColumns = useMemo<GridColumn[]>(() => {
     const visibleMetaColumns = lessonOnlyView ? metaColumns.filter((column) => column.id === "rowNumber" || column.id === "name") : metaColumns;
-    const customGridColumns = lessonOnlyView
+    const customGridColumns: Array<Extract<GridColumn, { kind: "custom" }>> = lessonOnlyView
       ? []
       : localCustomColumns
           .filter((column) => column.enabled)
@@ -382,7 +402,9 @@ export default function StudentLessonSpreadsheet({
             kind: "custom" as const,
             width: 128,
             customColumnId: column.id,
+            afterColumnId: column.afterColumnId ?? null,
           }));
+    const studentInfoColumns = lessonOnlyView ? visibleMetaColumns : insertCustomColumns(visibleMetaColumns, customGridColumns);
     const lessonColumns = visibleLessons.flatMap((lesson) => {
       const groupLabel = lessonDisplayLabel(lesson, lessonLabels);
       return lessonFields.map((field) => ({
@@ -401,8 +423,7 @@ export default function StudentLessonSpreadsheet({
     });
 
     return [
-      ...visibleMetaColumns,
-      ...customGridColumns,
+      ...studentInfoColumns,
       ...lessonColumns,
     ];
   }, [lessonLabels, lessonOnlyView, localCustomColumns, scope, visibleLessons]);
@@ -440,6 +461,7 @@ export default function StudentLessonSpreadsheet({
       setCellStyles(readStoredRecord<CellStyle>(cellStylesKey(scope)));
       setDirtyValues({});
       setDirtyMetaValues({});
+      setDraftRows([]);
       setCustomColumnDrafts({});
       setEditingCustomColumnId(null);
       setUndoStack([]);
@@ -539,6 +561,10 @@ export default function StudentLessonSpreadsheet({
   }, [gridColumns, rows]);
 
   useEffect(() => {
+    window.localStorage.setItem(sheetZoomStorageKey, String(sheetZoom));
+  }, [sheetZoom]);
+
+  useEffect(() => {
     const stopDragging = () => {
       setIsDragging(false);
       setDragMode(null);
@@ -561,9 +587,14 @@ export default function StudentLessonSpreadsheet({
     [metaDrafts, nameDrafts, values]
   );
 
-  const orderedRows = useMemo(
+  const sortedBaseRows = useMemo(
     () => sortRows(rows, sortColumnId, sortDirection, (row, columnId) => readDisplayedCellValue(row, columnId)),
     [readDisplayedCellValue, rows, sortColumnId, sortDirection]
+  );
+
+  const orderedRows = useMemo(
+    () => mergeDraftRows(sortedBaseRows, draftRows),
+    [draftRows, sortedBaseRows]
   );
 
   const selectionScope = useMemo(
@@ -610,8 +641,33 @@ export default function StudentLessonSpreadsheet({
     return new Set(matches);
   }, [columnSearch, displayRows, gridColumns, hasSelectionSearchScope, readDisplayedCellValue, selection]);
 
-  const dirtyCount = Object.keys(dirtyValues).length + Object.keys(dirtyMetaValues).length;
-  const hasPendingChanges = dirtyCount > 0 || lessonConfigDirty;
+  const draftStudentIds = useMemo(() => new Set(draftRows.map((row) => row.id)), [draftRows]);
+  const dirtyCount =
+    Object.keys(dirtyValues).filter((key) => {
+      const separator = key.indexOf(":");
+      return !draftStudentIds.has(key.slice(0, separator));
+    }).length + Object.values(dirtyMetaValues).filter((cell) => !draftStudentIds.has(cell.studentId)).length;
+  const draftRowsWithContent = useMemo(
+    () => draftRows.filter((row) => draftStudentHasContent(row, readDisplayedCellValue)),
+    [draftRows, readDisplayedCellValue]
+  );
+  const draftRowsMissingName = useMemo(
+    () => draftRowsWithContent.filter((row) => !readDisplayedCellValue(row, "name").trim()),
+    [draftRowsWithContent, readDisplayedCellValue]
+  );
+  const draftRowsReadyToCreate = useMemo(
+    () => draftRowsWithContent.filter((row) => readDisplayedCellValue(row, "name").trim()),
+    [draftRowsWithContent, readDisplayedCellValue]
+  );
+  const hasPendingChanges = dirtyCount > 0 || lessonConfigDirty || draftRowsWithContent.length > 0;
+  const changeSummary = useMemo(() => {
+    const parts = [
+      draftRowsWithContent.length > 0 ? `신규 학생 ${draftRowsWithContent.length}명` : "",
+      dirtyCount > 0 ? `수정 ${dirtyCount}건` : "",
+      lessonConfigDirty ? "차시 설정 변경" : "",
+    ].filter(Boolean);
+    return parts.length > 0 ? parts.join(" · ") : "변경 없음";
+  }, [dirtyCount, draftRowsWithContent.length, lessonConfigDirty]);
   const selectionLabel = selection ? formatSelectionLabel(selection, displayRows, gridColumns) : "선택 없음";
   const hasClassSchedule = Boolean(selectedClassGroup && parseDaysOfWeek(selectedClassGroup).length > 0);
   const selectedColumn = gridColumns.find((column) => column.id === effectiveColumnSearchId);
@@ -648,6 +704,7 @@ export default function StudentLessonSpreadsheet({
       extraLessonCount,
       lessonConfigDirty,
       localCustomColumns: localCustomColumns.map((column) => ({ ...column })),
+      draftRows: draftRows.map((row) => ({ ...row, customValues: { ...row.customValues } })),
       nameDrafts: snapshotNameDrafts,
       metaDrafts: snapshotMetaDrafts,
       classGroupDraftIds: snapshotClassGroupDraftIds,
@@ -673,6 +730,7 @@ export default function StudentLessonSpreadsheet({
     setExtraLessonCount(snapshot.extraLessonCount);
     setLessonConfigDirty(snapshot.lessonConfigDirty);
     setLocalCustomColumns(snapshot.localCustomColumns);
+    setDraftRows(snapshot.draftRows);
     setNameDrafts(snapshot.nameDrafts);
     setMetaDrafts(snapshot.metaDrafts);
     setClassGroupDraftIds(snapshot.classGroupDraftIds);
@@ -727,10 +785,16 @@ export default function StudentLessonSpreadsheet({
     });
   }
 
-  function addCustomColumn() {
+  function addCustomColumn(afterColumnId?: string | null) {
     const id = createLocalId("custom");
-    const nextColumn: SheetCustomColumn = { id, label: "새 열", enabled: true };
-    const nextColumns = [...localCustomColumns, nextColumn];
+    const nextColumn: SheetCustomColumn = { id, label: "새 열", enabled: true, afterColumnId: afterColumnId ?? null };
+    const anchorIndex = afterColumnId ? localCustomColumns.findIndex((column) => column.id === afterColumnId) : -1;
+    const nextColumns = [...localCustomColumns];
+    if (anchorIndex >= 0) {
+      nextColumns.splice(anchorIndex + 1, 0, nextColumn);
+    } else {
+      nextColumns.push(nextColumn);
+    }
     pushHistory();
     setLocalCustomColumns(nextColumns);
     setCustomColumnDrafts((current) => ({ ...current, [id]: nextColumn.label }));
@@ -769,11 +833,27 @@ export default function StudentLessonSpreadsheet({
     return selectedColumn?.kind === "custom" ? selectedColumn : null;
   }
 
+  function contextColumnForInsert() {
+    if (typeof contextMenu?.colIndex === "number") {
+      const menuColumn = gridColumns[contextMenu.colIndex];
+      if (menuColumn?.kind === "meta" || menuColumn?.kind === "custom") return menuColumn.id;
+    }
+
+    if (!selection) return null;
+    const range = normalizeRange(selection);
+    if (range.startCol !== range.endCol) return null;
+    const selectedColumn = gridColumns[range.startCol];
+    return selectedColumn?.kind === "meta" || selectedColumn?.kind === "custom" ? selectedColumn.id : null;
+  }
+
   function deleteCustomColumn(column: Extract<GridColumn, { kind: "custom" }> | null) {
-    if (!column) return;
+    if (!column) {
+      setStatusText("기본 학생 정보 열은 삭제할 수 없습니다.");
+      return;
+    }
     const current = localCustomColumns.find((item) => item.id === column.customColumnId);
     if (!current) return;
-    if (!window.confirm(`${current.label} 열을 삭제할까요? 기본 학생 정보 열은 삭제되지 않습니다.`)) return;
+    if (!window.confirm(`${current.label} 커스텀 열을 삭제할까요? 기본 학생 정보 열은 삭제할 수 없습니다.`)) return;
 
     const nextColumns = localCustomColumns.filter((item) => item.id !== column.customColumnId);
     pushHistory();
@@ -816,14 +896,100 @@ export default function StudentLessonSpreadsheet({
     });
   }
 
+  function createDraftStudentRow(afterRowId: string | null): DraftStudentRow {
+    const classGroupId = effectiveClassGroupId ?? "";
+    return {
+      id: createLocalId("draft"),
+      no: rows.length + draftRows.length + 1,
+      name: "",
+      phone: "",
+      parentPhone: "",
+      schoolName: "",
+      grade: "",
+      classGroupId,
+      classGroupName: selectedClassGroup?.name ?? "",
+      subject: "",
+      currentLevel: "",
+      memo: "",
+      attendance: "",
+      assignment: "",
+      assignmentScore: null,
+      score: null,
+      maxScore: 100,
+      attendanceByDate: {},
+      assignmentByDate: {},
+      scoreByDate: {},
+      customValues: {},
+      isDraft: true,
+      afterRowId,
+      createdAt: currentClientTime(),
+    };
+  }
+
+  function addDraftRowFromContext() {
+    const contextRow = typeof contextMenu?.rowIndex === "number" ? displayRows[contextMenu.rowIndex] : null;
+    const draftRow = createDraftStudentRow(contextRow?.id ?? null);
+    pushHistory();
+    setDraftRows((current) => [...current, draftRow]);
+    setSelection(null);
+    setStatusText("신규 학생 행 추가됨 - 학생명 입력 필요");
+  }
+
   function deleteSelectedStudents() {
     const selectedRows = selectedRowsForAction();
     if (selectedRows.length === 0) return;
-    const label = selectedRows.length === 1 ? selectedRows[0].name : `${selectedRows.length}명`;
-    if (!window.confirm(`${label} 학생을 삭제할까요? 이 작업은 저장 버튼 없이 바로 반영됩니다.`)) return;
+    const draftSelectedRows = selectedRows.filter(isDraftStudentRow);
+    const persistedRows = selectedRows.filter((row) => !isDraftStudentRow(row));
+    const confirmMessage = studentDeleteConfirmMessage(selectedRows, persistedRows, draftSelectedRows, displayName);
+    if (!window.confirm(confirmMessage)) return;
+
+    if (draftSelectedRows.length > 0) {
+      const draftIds = new Set(draftSelectedRows.map((row) => row.id));
+      pushHistory();
+      setDraftRows((current) => current.filter((row) => !draftIds.has(row.id)));
+      setDirtyValues((current) => {
+        const next = { ...current };
+        for (const key of Object.keys(next)) {
+          const separator = key.indexOf(":");
+          if (draftIds.has(key.slice(0, separator))) delete next[key];
+        }
+        return next;
+      });
+      setDirtyMetaValues((current) => {
+        const next = { ...current };
+        for (const [key, value] of Object.entries(next)) {
+          if (draftIds.has(value.studentId)) delete next[key];
+        }
+        return next;
+      });
+      setNameDrafts((current) => {
+        const next = { ...current };
+        for (const id of draftIds) delete next[id];
+        return next;
+      });
+      setMetaDrafts((current) => {
+        const next = { ...current };
+        for (const key of Object.keys(next)) {
+          const separator = key.indexOf(":");
+          if (draftIds.has(key.slice(0, separator))) delete next[key];
+        }
+        return next;
+      });
+      setClassGroupDraftIds((current) => {
+        const next = { ...current };
+        for (const id of draftIds) delete next[id];
+        return next;
+      });
+    }
+
+    if (persistedRows.length === 0) {
+      setSelection(null);
+      setStatusText("신규 학생 행 삭제됨");
+      return;
+    }
 
     const formData = new FormData();
-    for (const row of selectedRows) formData.append("studentIds", row.id);
+    for (const row of persistedRows) formData.append("studentIds", row.id);
     setStatusText("학생 삭제 중");
     startTransition(() => {
       void deleteStudentsFromSheet(formData)
@@ -934,6 +1100,7 @@ export default function StudentLessonSpreadsheet({
     const value = (nameDrafts[row.id] ?? row.name).trim();
     setEditingNameId(null);
     if (value) setStatusText("저장 대기");
+    if (!value && isDraftStudentRow(row)) setStatusText("신규 행은 학생명을 입력해야 저장됩니다.");
   }
 
   function editableMetaValue(row: StudentSheetRow, columnId: EditableMetaColumnId) {
@@ -1010,7 +1177,7 @@ export default function StudentLessonSpreadsheet({
 
   function buildMetaUpdate(row: StudentSheetRow, columnId: EditableMetaColumnId, rawValue: string) {
     const value = rawValue.slice(0, 500);
-    if (columnId === "name" && !value.trim()) return null;
+    if (columnId === "name" && !value.trim() && !isDraftStudentRow(row)) return null;
 
     if (columnId === "classGroup") {
       const resolved = resolveClassGroupInput(value);
@@ -1143,6 +1310,67 @@ export default function StudentLessonSpreadsheet({
     applyValueToSelection(readDisplayedCellValue(sourceRow, sourceColumn.id));
   }
 
+  function openReplaceDialog() {
+    const cells = selectedEditableCells(selection, displayRows, gridColumns);
+    if (cells.length === 0) {
+      setStatusText("바꾸기를 적용할 편집 가능한 셀이 없습니다.");
+      return;
+    }
+    setEditingCellKey(null);
+    setEditingNameId(null);
+    setEditingMetaKey(null);
+    setReplaceDialogOpen(true);
+  }
+
+  function applyReplaceToSelection() {
+    const findText = replaceFindText;
+    if (!findText) {
+      setStatusText("찾을 내용을 입력해주세요.");
+      return;
+    }
+
+    const cells = selectedEditableCells(selection, displayRows, gridColumns);
+    const nextValues: Record<string, string> = {};
+    const nextMetaDrafts: Record<string, string> = {};
+    const nextDirtyMetaValues: Record<string, DirtyMetaValue> = {};
+    const nextClassGroupDraftIds: Record<string, string> = {};
+    let changedCount = 0;
+
+    for (const cell of cells) {
+      const currentValue = readDisplayedCellValue(cell.row, cell.column.id);
+      if (!currentValue) continue;
+      const replacement = replaceText(currentValue, findText, replaceWithText, replaceCaseSensitive);
+      if (!replacement.changed) continue;
+
+      if (cell.column.kind === "lesson" || cell.column.kind === "custom") {
+        nextValues[lessonCellKey(cell.row.id, cell.column.id)] = replacement.value.slice(0, 500);
+        changedCount += 1;
+      } else if (queueMetaCellUpdate(cell.row, cell.column.id, replacement.value, nextMetaDrafts, nextDirtyMetaValues, nextClassGroupDraftIds)) {
+        changedCount += 1;
+      }
+    }
+
+    if (changedCount === 0) {
+      setStatusText("변경할 내용이 없습니다.");
+      return;
+    }
+
+    if (changedCount >= 45 && !window.confirm(`선택 범위 내 ${changedCount}개 셀이 변경됩니다. 계속할까요?`)) return;
+
+    pushHistory();
+    if (Object.keys(nextValues).length > 0) {
+      setValues((current) => ({ ...current, ...nextValues }));
+      setDirtyValues((current) => ({ ...current, ...nextValues }));
+    }
+    if (Object.keys(nextMetaDrafts).length > 0) {
+      setMetaDrafts((current) => ({ ...current, ...nextMetaDrafts }));
+      setDirtyMetaValues((current) => ({ ...current, ...nextDirtyMetaValues }));
+      setClassGroupDraftIds((current) => ({ ...current, ...nextClassGroupDraftIds }));
+    }
+    setReplaceDialogOpen(false);
+    setStatusText(`바꾸기 ${changedCount}개 셀 변경됨 - 저장 필요`);
+  }
+
   function clearSelectionStyles() {
     const keys = selectedSheetCells(selection, displayRows, gridColumns).map((cell) => lessonCellKey(cell.row.id, cell.columnId));
     if (keys.length === 0) return;
@@ -1172,6 +1400,14 @@ export default function StudentLessonSpreadsheet({
   function updateFormat(patch: CellStyle) {
     setFormatDraft((current) => ({ ...current, ...patch }));
     applyStyleToSelection(patch);
+  }
+
+  function changeSheetZoom(nextZoom: number) {
+    setSheetZoom(normalizeSheetZoom(nextZoom));
+  }
+
+  function stepSheetZoom(direction: -1 | 1) {
+    setSheetZoom((current) => nextSheetZoom(current, direction));
   }
 
   function showLessonRange(start: number, end: number) {
@@ -1632,10 +1868,25 @@ export default function StudentLessonSpreadsheet({
     event.preventDefault();
   }
 
+  function buildDraftStudentForm(row: DraftStudentRow) {
+    const formData = new FormData();
+    const classGroupId = classGroupDraftIds[row.id] ?? row.classGroupId ?? effectiveClassGroupId ?? "";
+    formData.set("name", readDisplayedCellValue(row, "name").trim());
+    formData.set("phone", readDisplayedCellValue(row, "phone").trim());
+    formData.set("parentPhone", readDisplayedCellValue(row, "parentPhone").trim());
+    formData.set("schoolName", readDisplayedCellValue(row, "schoolName").trim());
+    formData.set("grade", readDisplayedCellValue(row, "grade").trim());
+    formData.set("subject", readDisplayedCellValue(row, "subject").trim());
+    formData.set("currentLevel", readDisplayedCellValue(row, "currentLevel").trim());
+    formData.set("memo", readDisplayedCellValue(row, "memo").trim());
+    formData.set("classGroupId", classGroupId);
+    return formData;
+  }
+
   function saveChanges() {
     const recordCells: Array<{ studentId: string; date: string; field: LessonFieldId; value: string }> = [];
     const customCells: Array<{ studentId: string; columnId: string; value: string }> = [];
-    const metaCells = Object.values(dirtyMetaValues);
+    const metaCells = Object.values(dirtyMetaValues).filter((cell) => !draftStudentIds.has(cell.studentId));
     const shouldSaveLessonConfig = lessonConfigDirty && Boolean(effectiveClassGroupId);
 
     for (const [key, value] of Object.entries(dirtyValues)) {
@@ -1643,6 +1894,7 @@ export default function StudentLessonSpreadsheet({
       const studentId = key.slice(0, separator);
       const columnId = key.slice(separator + 1);
       const column = lessonColumnMap.get(columnId);
+      if (draftStudentIds.has(studentId)) continue;
 
       if (column?.date) {
         recordCells.push({ studentId, date: column.date, field: column.field, value });
@@ -1653,7 +1905,19 @@ export default function StudentLessonSpreadsheet({
       }
     }
 
-    if (recordCells.length === 0 && customCells.length === 0 && metaCells.length === 0 && !shouldSaveLessonConfig) return;
+    if (draftRowsMissingName.length > 0) {
+      const firstMissingRow = draftRowsMissingName[0];
+      const rowIndex = displayRows.findIndex((row) => row.id === firstMissingRow.id);
+      const nameColIndex = gridColumns.findIndex((column) => column.id === "name");
+      if (rowIndex >= 0 && nameColIndex >= 0) {
+        setSelection({ anchor: { rowIndex, colIndex: nameColIndex }, cursor: { rowIndex, colIndex: nameColIndex } });
+        beginEditName(firstMissingRow);
+      }
+      setStatusText(`신규 행 ${draftRowsMissingName.length}개의 학생명을 입력해주세요.`);
+      return;
+    }
+
+    if (recordCells.length === 0 && customCells.length === 0 && metaCells.length === 0 && draftRowsReadyToCreate.length === 0 && !shouldSaveLessonConfig) return;
     const recordFormData = new FormData();
     recordFormData.set("cells", JSON.stringify(recordCells));
     const customFormData = new FormData();
@@ -1679,6 +1943,9 @@ export default function StudentLessonSpreadsheet({
     startTransition(() => {
       void (async () => {
         if (shouldSaveLessonConfig) await saveClassLessonConfig(lessonFormData);
+        for (const row of draftRowsReadyToCreate) {
+          await createStudentFromSheet(buildDraftStudentForm(row));
+        }
         if (recordCells.length > 0) await updateStudentLessonCells(recordFormData);
         if (customCells.length > 0) await updateStudentSheetCustomCells(customFormData);
         for (const cell of metaCells) {
@@ -1697,6 +1964,10 @@ export default function StudentLessonSpreadsheet({
         .then(() => {
           setDirtyValues({});
           setDirtyMetaValues({});
+          setDraftRows((current) => {
+            const createdIds = new Set(draftRowsReadyToCreate.map((row) => row.id));
+            return current.filter((row) => !createdIds.has(row.id));
+          });
           setLessonConfigDirty(false);
           setStatusText("저장됨");
           if (shouldSaveLessonConfig) {
@@ -1711,7 +1982,7 @@ export default function StudentLessonSpreadsheet({
             setRangeStartLessonId("");
             setRangeEndLessonId("");
           }
-          if (shouldSaveLessonConfig || metaCells.length > 0) router.refresh();
+          if (shouldSaveLessonConfig || metaCells.length > 0 || draftRowsReadyToCreate.length > 0) router.refresh();
         })
         .catch((error) => {
           setStatusText(error instanceof Error ? error.message : "저장 실패");
@@ -1725,7 +1996,24 @@ export default function StudentLessonSpreadsheet({
     : "반 선택 시 운영기간과 요일 기준으로 차시 자동 생성";
   const scheduleSummaryStyle = selectedClassGroup && !hasClassSchedule ? warningText : undefined;
   const sheetHeight = isFullscreen ? "calc(100vh - 138px)" : "100%";
+  const sheetZoomFactor = sheetZoom / 100;
+  const zoomedTableWidth = zoomDimension(totalTableWidth(gridColumns), sheetZoomFactor);
+  const zoomedStyles = buildSheetZoomStyles(sheetZoomFactor);
+  const replaceTargetCells = selectedEditableCells(selection, displayRows, gridColumns);
+  const replaceScopeLabel = replaceScopeDescription(selection, displayRows, gridColumns, replaceTargetCells);
+  const replacePreviewCount = countReplaceChanges(
+    replaceTargetCells,
+    replaceFindText,
+    replaceWithText,
+    replaceCaseSensitive,
+    readDisplayedCellValue,
+    buildMetaUpdate
+  );
   const deletableContextColumn = contextMenu ? contextTargetCustomColumn() : null;
+  const insertAfterColumnId = contextMenu ? contextColumnForInsert() : null;
+  const contextRowsForAction = contextMenu ? selectedRowsForAction() : [];
+  const contextHasRowsForAction = contextRowsForAction.length > 0;
+  const contextHasPersistedRows = contextRowsForAction.some((row) => !isDraftStudentRow(row));
 
   return (
     <div style={{ ...shell, ...(isFullscreen ? fullscreenShell : {}) }}>
@@ -1792,7 +2080,7 @@ export default function StudentLessonSpreadsheet({
           <b>{selectedClassGroup ? selectedClassGroup.name : "전체 학생"}</b>
           <span>{displayRows.length}/{rows.length}명</span>
           <span>{visibleLessons.length}개 차시 표시</span>
-          <span>{hasPendingChanges ? [dirtyCount > 0 ? `${dirtyCount}칸 변경` : "", lessonConfigDirty ? "차시 설정 변경" : ""].filter(Boolean).join(" / ") : "변경 없음"}</span>
+          <span>{changeSummary}</span>
           <span style={scheduleSummaryStyle}>{scheduleSummary}</span>
         </div>
 
@@ -1816,6 +2104,31 @@ export default function StudentLessonSpreadsheet({
       </div>
 
       <div style={toolbar}>
+        <div style={zoomControl} aria-label="시트 확대 축소">
+          <button
+            type="button"
+            onClick={() => stepSheetZoom(-1)}
+            disabled={sheetZoom <= sheetZoomLevels[0]}
+            style={{ ...zoomButton, ...(sheetZoom <= sheetZoomLevels[0] ? disabledZoomButton : {}) }}
+            title="시트 축소"
+            aria-label="시트 축소"
+          >
+            -
+          </button>
+          <button type="button" onClick={() => changeSheetZoom(100)} style={zoomValueButton} title="100%로 초기화">
+            {sheetZoom}%
+          </button>
+          <button
+            type="button"
+            onClick={() => stepSheetZoom(1)}
+            disabled={sheetZoom >= sheetZoomLevels[sheetZoomLevels.length - 1]}
+            style={{ ...zoomButton, ...(sheetZoom >= sheetZoomLevels[sheetZoomLevels.length - 1] ? disabledZoomButton : {}) }}
+            title="시트 확대"
+            aria-label="시트 확대"
+          >
+            +
+          </button>
+        </div>
         <ColorPaletteDropdown
           label="채우기"
           title="채우기 색상"
@@ -1902,7 +2215,7 @@ export default function StudentLessonSpreadsheet({
             tabIndex={0}
           >
             <table
-              style={{ ...sheetTable, width: totalTableWidth(gridColumns), minWidth: totalTableWidth(gridColumns) }}
+              style={{ ...sheetTable, ...zoomedStyles.sheetTable, width: zoomedTableWidth, minWidth: zoomedTableWidth }}
               onMouseDown={(event) => {
                 if (event.target === event.currentTarget) {
                   setSelection(null);
@@ -1929,10 +2242,10 @@ export default function StudentLessonSpreadsheet({
                           if (column.kind === "custom") beginEditCustomColumn(column);
                         }}
                         onContextMenu={(event) => openContextMenu(event, undefined, headerColIndex)}
-                        style={{ ...sheetTh, ...stickyTop, minWidth: column.width, width: column.width, cursor: "pointer" }}
+                        style={{ ...sheetTh, ...zoomedStyles.sheetTh, ...stickyTop, minWidth: zoomDimension(column.width, sheetZoomFactor), width: zoomDimension(column.width, sheetZoomFactor), cursor: "pointer" }}
                         title={`${column.label} 열 선택`}
                       >
-                        <div style={metaHeaderInner}>
+                        <div style={{ ...metaHeaderInner, ...zoomedStyles.metaHeaderInner }}>
                           {isEditingCustomColumn && column.kind === "custom" && (
                             <input
                               value={customColumnDrafts[column.customColumnId] ?? column.label}
@@ -1944,7 +2257,7 @@ export default function StudentLessonSpreadsheet({
                               }}
                               onClick={(event) => event.stopPropagation()}
                               onMouseDown={(event) => event.stopPropagation()}
-                              style={customHeaderInput}
+                              style={{ ...customHeaderInput, ...zoomedStyles.metaHeaderButton }}
                               autoFocus
                               autoComplete="off"
                               aria-label="커스텀 열 이름"
@@ -1956,7 +2269,7 @@ export default function StudentLessonSpreadsheet({
                               event.stopPropagation();
                               selectColumn(headerColIndex);
                             }}
-                            style={{ ...metaHeaderButton, ...(isSearchColumn ? subHeaderButtonActive : {}), ...(isEditingCustomColumn ? hiddenHeaderButton : {}) }}
+                            style={{ ...metaHeaderButton, ...zoomedStyles.metaHeaderButton, ...(isSearchColumn ? subHeaderButtonActive : {}), ...(isEditingCustomColumn ? hiddenHeaderButton : {}) }}
                             title={`${column.label} 열 검색`}
                           >
                             {column.label}
@@ -1967,7 +2280,7 @@ export default function StudentLessonSpreadsheet({
                               event.stopPropagation();
                               toggleSort(column.id);
                             }}
-                            style={{ ...subSortButton, ...(isSortColumn ? subSortButtonActive : {}) }}
+                            style={{ ...subSortButton, ...zoomedStyles.subSortButton, ...(isSortColumn ? subSortButtonActive : {}) }}
                             title={`${column.label} 정렬`}
                           >
                             {isSortColumn ? (sortDirection === "asc" ? "▲" : "▼") : "↕"}
@@ -1980,27 +2293,27 @@ export default function StudentLessonSpreadsheet({
                 {visibleLessons.map((lesson) => {
                   const label = lessonDisplayLabel(lesson, lessonLabels);
                   return (
-                    <th key={lesson.id} colSpan={lessonFields.length} style={{ ...lessonGroupTh, ...stickyTop }}>
-                      <div style={lessonHeaderTop}>
+                    <th key={lesson.id} colSpan={lessonFields.length} style={{ ...lessonGroupTh, ...zoomedStyles.lessonGroupTh, ...stickyTop }}>
+                      <div style={{ ...lessonHeaderTop, ...zoomedStyles.lessonHeaderTop }}>
                         <input
                           value={label}
                           onChange={(event) => updateLessonLabel(lesson.id, event.target.value)}
-                          style={lessonNameInput}
+                          style={{ ...lessonNameInput, ...zoomedStyles.lessonNameInput }}
                           aria-label={`${lesson.defaultLabel} 이름`}
                         />
-                        <button type="button" onClick={() => insertLessonAfter(lesson.id)} style={insertLessonButton} title="이 차시 뒤에 차시 추가">
+                        <button type="button" onClick={() => insertLessonAfter(lesson.id)} style={{ ...insertLessonButton, ...zoomedStyles.lessonIconButton }} title="이 차시 뒤에 차시 추가">
                           +
                         </button>
-                        <button type="button" onClick={() => deleteLesson(lesson.id)} style={deleteLessonButton} title="이 차시 삭제" disabled={lessons.length <= 1}>
+                        <button type="button" onClick={() => deleteLesson(lesson.id)} style={{ ...deleteLessonButton, ...zoomedStyles.lessonIconButton }} title="이 차시 삭제" disabled={lessons.length <= 1}>
                           ×
                         </button>
                       </div>
-                      <div style={lessonDateLine}>
+                      <div style={{ ...lessonDateLine, ...zoomedStyles.lessonDateLine }}>
                         <input
                           type="text"
                           value={lesson.date ?? ""}
                           onChange={(event) => updateLessonDate(lesson.id, event.target.value)}
-                          style={lessonDateInput}
+                          style={{ ...lessonDateInput, ...zoomedStyles.lessonDateInput }}
                           placeholder="YYYY-MM-DD"
                           aria-label={`${label || lesson.defaultLabel} 날짜`}
                           onMouseDown={(event) => event.stopPropagation()}
@@ -2010,30 +2323,30 @@ export default function StudentLessonSpreadsheet({
                           type="text"
                           value={lesson.startTime ?? ""}
                           onChange={(event) => updateLessonTime(lesson.id, "startTime", event.target.value)}
-                          style={lessonTimeInput}
+                          style={{ ...lessonTimeInput, ...zoomedStyles.lessonTimeInput }}
                           placeholder="시작"
                           aria-label={`${label || lesson.defaultLabel} 시작 시간`}
                           onMouseDown={(event) => event.stopPropagation()}
                           autoComplete="off"
                         />
-                        <span style={lessonTimeSeparator}>~</span>
+                        <span style={{ ...lessonTimeSeparator, ...zoomedStyles.lessonTimeSeparator }}>~</span>
                         <input
                           type="text"
                           value={lesson.endTime ?? ""}
                           onChange={(event) => updateLessonTime(lesson.id, "endTime", event.target.value)}
-                          style={lessonTimeInput}
+                          style={{ ...lessonTimeInput, ...zoomedStyles.lessonTimeInput }}
                           placeholder="종료"
                           aria-label={`${label || lesson.defaultLabel} 종료 시간`}
                           onMouseDown={(event) => event.stopPropagation()}
                           autoComplete="off"
                         />
                       </div>
-                      <div style={lessonMemoRow}>
-                        <span style={lessonMemoLabel}>진도</span>
+                      <div style={{ ...lessonMemoRow, ...zoomedStyles.lessonMemoRow }}>
+                        <span style={{ ...lessonMemoLabel, ...zoomedStyles.lessonMemoLabel }}>진도</span>
                         <input
                           value={lesson.memo ?? ""}
                           onChange={(event) => updateLessonMemo(lesson.id, event.target.value)}
-                          style={lessonMemoInput}
+                          style={{ ...lessonMemoInput, ...zoomedStyles.lessonMemoInput }}
                           placeholder="진도/메모 입력"
                           aria-label={`${label || lesson.defaultLabel} 차시 메모`}
                           onMouseDown={(event) => event.stopPropagation()}
@@ -2052,12 +2365,12 @@ export default function StudentLessonSpreadsheet({
                     const isSearchColumn = effectiveColumnSearchId === subColumnId && isFullColumnSelected(selection, subColIndex, displayRows.length);
                     const isSortColumn = sortColumnId === subColumnId;
                     return (
-                      <th key={`${lesson.id}-${field.id}`} style={{ ...sheetSubTh, top: lessonHeaderStickyTop, minWidth: field.width, width: field.width }}>
-                        <div style={subHeaderInner}>
+                      <th key={`${lesson.id}-${field.id}`} style={{ ...sheetSubTh, ...zoomedStyles.sheetSubTh, top: zoomDimension(lessonHeaderStickyTop, sheetZoomFactor), minWidth: zoomDimension(field.width, sheetZoomFactor), width: zoomDimension(field.width, sheetZoomFactor) }}>
+                        <div style={{ ...subHeaderInner, ...zoomedStyles.subHeaderInner }}>
                           <button
                             type="button"
                             onClick={() => selectColumn(subColIndex)}
-                            style={{ ...subHeaderButton, ...(isSearchColumn ? subHeaderButtonActive : {}) }}
+                            style={{ ...subHeaderButton, ...zoomedStyles.subHeaderButton, ...(isSearchColumn ? subHeaderButtonActive : {}) }}
                             title={`${lessonDisplayLabel(lesson, lessonLabels) || lesson.defaultLabel} ${field.label} 열 검색`}
                           >
                             {field.label}
@@ -2065,7 +2378,7 @@ export default function StudentLessonSpreadsheet({
                           <button
                             type="button"
                             onClick={() => toggleSort(subColumnId)}
-                            style={{ ...subSortButton, ...(isSortColumn ? subSortButtonActive : {}) }}
+                            style={{ ...subSortButton, ...zoomedStyles.subSortButton, ...(isSortColumn ? subSortButtonActive : {}) }}
                             title="정렬"
                           >
                             {isSortColumn ? (sortDirection === "asc" ? "▲" : "▼") : "↕"}
@@ -2079,7 +2392,7 @@ export default function StudentLessonSpreadsheet({
             </thead>
             <tbody>
               {displayRows.map((row, rowIndex) => (
-                <tr key={row.id}>
+                <tr key={row.id} style={isDraftStudentRow(row) ? draftRowStyle : undefined}>
                   {gridColumns.map((column, colIndex) => {
                     const selected = isSelected(selection, rowIndex, colIndex);
 
@@ -2089,10 +2402,19 @@ export default function StudentLessonSpreadsheet({
                       const key = lessonCellKey(row.id, column.id);
                       const isClassGroupCell = column.id === "classGroup";
                       const canEditMeta = !isRowNumberCell;
-                      const value = isRowNumberCell ? String(rowIndex + 1) : editableMetaValue(row, column.id as EditableMetaColumnId);
+                      const isDraftRow = isDraftStudentRow(row);
+                      const value = isRowNumberCell ? (isDraftRow ? "신규" : String(rowIndex + 1)) : editableMetaValue(row, column.id as EditableMetaColumnId);
                       const isEditingName = isNameCell && editingNameId === row.id;
                       const isEditingMeta = !isNameCell && canEditMeta && editingMetaKey === key;
                       const localStyle = cellStyles[key] ?? {};
+                      const displayValue =
+                        isRowNumberCell && isDraftRow ? (
+                          <span style={draftRowBadge}>신규</span>
+                        ) : isNameCell && isDraftRow && !value ? (
+                          <span style={draftNamePlaceholder}>학생명 입력</span>
+                        ) : (
+                          value
+                        );
                       return (
                         <td
                           key={column.id}
@@ -2109,7 +2431,17 @@ export default function StudentLessonSpreadsheet({
                           }}
                           onContextMenu={(event) => openContextMenu(event, rowIndex, colIndex)}
                           onMouseEnter={() => enterDrag(rowIndex, colIndex)}
-                          style={{ ...metaTd, ...styleToCss(localStyle), ...(isRowNumberCell ? rowHeaderTd : {}), ...(canEditMeta ? clickableMetaTd : {}), ...(selected ? selectedCell : {}), ...(rangeMatchKeys.has(key) ? matchedCell : {}) }}
+                          style={{
+                            ...metaTd,
+                            ...zoomedStyles.metaTd,
+                            ...styleToCss(localStyle, sheetZoomFactor),
+                            ...(isRowNumberCell ? rowHeaderTd : {}),
+                            ...(isDraftRow ? draftCellStyle : {}),
+                            ...(isDraftRow && isRowNumberCell ? draftRowHeaderTd : {}),
+                            ...(canEditMeta ? clickableMetaTd : {}),
+                            ...(selected ? selectedCell : {}),
+                            ...(rangeMatchKeys.has(key) ? matchedCell : {}),
+                          }}
                           title={isRowNumberCell ? "클릭/드래그: 학생 행 전체 선택" : "드래그: 선택 / 더블클릭: 수정"}
                         >
                           {isEditingName ? (
@@ -2135,10 +2467,11 @@ export default function StudentLessonSpreadsheet({
                                 }
                                 if (event.key === "Escape") setEditingNameId(null);
                               }}
-                              style={nameEditInput}
+                              style={{ ...nameEditInput, ...zoomedStyles.nameEditInput }}
+                              placeholder={isDraftRow ? "학생명 입력" : undefined}
                               autoComplete="off"
                               disabled={isPending}
-                              aria-label={`${row.name} 학생명`}
+                              aria-label={`${displayName(row) || "신규 학생"} 학생명`}
                             />
                           ) : isEditingMeta && isClassGroupCell ? (
                             <select
@@ -2153,7 +2486,7 @@ export default function StudentLessonSpreadsheet({
                               }}
                               onClick={(event) => event.stopPropagation()}
                               onMouseDown={(event) => event.stopPropagation()}
-                              style={metaSelectInput}
+                              style={{ ...metaSelectInput, ...zoomedStyles.metaSelectInput }}
                               disabled={isPending}
                               aria-label={`${row.name} 반`}
                             >
@@ -2189,13 +2522,13 @@ export default function StudentLessonSpreadsheet({
                               }}
                               onClick={(event) => event.stopPropagation()}
                               onMouseDown={(event) => event.stopPropagation()}
-                              style={nameEditInput}
+                              style={{ ...nameEditInput, ...zoomedStyles.nameEditInput }}
                               autoComplete="off"
                               disabled={isPending}
                               aria-label={`${row.name} ${column.label}`}
                             />
                           ) : (
-                            value
+                            displayValue
                           )}
                         </td>
                       );
@@ -2219,7 +2552,9 @@ export default function StudentLessonSpreadsheet({
                         onMouseEnter={() => enterDrag(rowIndex, colIndex)}
                         style={{
                           ...lessonTd,
-                          ...styleToCss(localStyle),
+                          ...zoomedStyles.lessonTd,
+                          ...styleToCss(localStyle, sheetZoomFactor),
+                          ...(isDraftStudentRow(row) ? draftCellStyle : {}),
                           ...(selected ? selectedCell : {}),
                           ...(isRangeMatch ? matchedCell : {}),
                           ...(isDirty ? dirtyCell : {}),
@@ -2239,12 +2574,12 @@ export default function StudentLessonSpreadsheet({
                               setEditingCellKey(null);
                             }}
                             onKeyDown={(event) => onCellKeyDown(event, rowIndex, colIndex)}
-                            style={{ ...cellInput, textAlign: localStyle.align ?? "center" }}
+                            style={{ ...cellInput, ...zoomedStyles.cellInput, textAlign: localStyle.align ?? "center" }}
                             disabled={isPending}
                             aria-label={`${row.name} ${cellLabel}`}
                           />
                         ) : (
-                          <div style={{ ...cellDisplay, textAlign: localStyle.align ?? "center" }}>{value}</div>
+                          <div style={{ ...cellDisplay, ...zoomedStyles.cellDisplay, textAlign: localStyle.align ?? "center" }}>{value}</div>
                         )}
                       </td>
                     );
@@ -2390,16 +2725,40 @@ export default function StudentLessonSpreadsheet({
               <span>붙여넣기</span>
               <span style={contextMenuShortcut}>Ctrl+V</span>
             </button>
+            <button
+              type="button"
+              style={{ ...contextMenuItem, ...(replaceTargetCells.length === 0 ? disabledContextMenuItem : {}) }}
+              onClick={() => {
+                setContextMenu(null);
+                openReplaceDialog();
+              }}
+              disabled={replaceTargetCells.length === 0}
+            >
+              <span>바꾸기</span>
+              <span style={contextMenuShortcut}>선택 범위</span>
+            </button>
             <div style={contextMenuSeparator} />
             <button
               type="button"
               style={contextMenuItem}
               onClick={() => {
                 setContextMenu(null);
-                addCustomColumn();
+                addDraftRowFromContext();
               }}
             >
-              <span>열 추가</span>
+              <span>행 추가</span>
+              <span style={contextMenuShortcut}>빈 학생 행</span>
+            </button>
+            <div style={contextMenuSeparator} />
+            <button
+              type="button"
+              style={contextMenuItem}
+              onClick={() => {
+                setContextMenu(null);
+                addCustomColumn(insertAfterColumnId);
+              }}
+            >
+              <span>커스텀 열 추가</span>
               <span style={contextMenuShortcut}>더블클릭으로 이름 변경</span>
             </button>
             <button
@@ -2410,23 +2769,92 @@ export default function StudentLessonSpreadsheet({
                 deleteCustomColumn(deletableContextColumn);
               }}
               disabled={!deletableContextColumn}
+              title={deletableContextColumn ? "추가한 커스텀 열만 삭제할 수 있습니다." : "기본 학생 정보 열은 삭제할 수 없습니다."}
             >
-              <span>열 삭제</span>
-              <span style={contextMenuShortcut}>{deletableContextColumn ? "추가한 열만" : "기본 열 삭제 불가"}</span>
+              <span>커스텀 열 삭제</span>
+              <span style={contextMenuShortcut}>{deletableContextColumn ? "추가한 열만" : "기본 정보 열 삭제 불가"}</span>
             </button>
             <div style={contextMenuSeparator} />
             <button
               type="button"
-              style={{ ...contextMenuItem, ...contextMenuDangerItem, ...(selectedRowsForAction().length === 0 ? disabledContextMenuItem : {}) }}
+              style={{ ...contextMenuItem, ...contextMenuDangerItem, ...(!contextHasRowsForAction ? disabledContextMenuItem : {}) }}
               onClick={() => {
                 setContextMenu(null);
                 deleteSelectedStudents();
               }}
-              disabled={selectedRowsForAction().length === 0}
+              disabled={!contextHasRowsForAction}
             >
-              <span>행 삭제</span>
-              <span style={contextMenuShortcut}>학생 삭제</span>
+              <span>{contextHasPersistedRows ? "학생 삭제" : "신규 행 삭제"}</span>
+              <span style={contextMenuShortcut}>{contextHasPersistedRows ? "실제 학생 기록 삭제" : "저장 전 행 제거"}</span>
             </button>
+          </div>
+        )}
+        {replaceDialogOpen && (
+          <div style={replaceModalOverlay} role="dialog" aria-modal="true" aria-label="선택 범위 바꾸기">
+            <div style={replaceModal}>
+              <header style={replaceModalHeader}>
+                <div>
+                  <h2 style={replaceModalTitle}>선택 범위 바꾸기</h2>
+                  <p style={replaceModalDesc}>적용 범위: {replaceScopeLabel}</p>
+                </div>
+                <button type="button" onClick={() => setReplaceDialogOpen(false)} style={replaceCloseButton} aria-label="닫기">
+                  ×
+                </button>
+              </header>
+              <div style={replaceModalBody}>
+                <label style={replaceLabel}>
+                  찾을 내용
+                  <input
+                    value={replaceFindText}
+                    onChange={(event) => setReplaceFindText(event.target.value)}
+                    style={replaceInput}
+                    autoFocus
+                    placeholder="예: 영상"
+                  />
+                </label>
+                <label style={replaceLabel}>
+                  바꿀 내용
+                  <input
+                    value={replaceWithText}
+                    onChange={(event) => setReplaceWithText(event.target.value)}
+                    style={replaceInput}
+                    placeholder="빈 값이면 삭제"
+                  />
+                </label>
+                <label style={replaceCheckLabel}>
+                  <input
+                    type="checkbox"
+                    checked={replaceCaseSensitive}
+                    onChange={(event) => setReplaceCaseSensitive(event.target.checked)}
+                  />
+                  대소문자 구분
+                </label>
+                <div style={replacePreviewBox}>
+                  {replaceFindText ? (
+                    replacePreviewCount > 0 ? (
+                      <span>총 {replacePreviewCount}개 셀이 변경됩니다.</span>
+                    ) : (
+                      <span>변경할 내용이 없습니다.</span>
+                    )
+                  ) : (
+                    <span>찾을 내용을 입력해주세요.</span>
+                  )}
+                </div>
+              </div>
+              <footer style={replaceModalFooter}>
+                <button type="button" onClick={() => setReplaceDialogOpen(false)} style={replaceSecondaryButton}>
+                  취소
+                </button>
+                <button
+                  type="button"
+                  onClick={applyReplaceToSelection}
+                  disabled={!replaceFindText || replacePreviewCount === 0}
+                  style={{ ...replacePrimaryButton, ...(!replaceFindText || replacePreviewCount === 0 ? replaceDisabledButton : {}) }}
+                >
+                  바꾸기
+                </button>
+              </footer>
+            </div>
           </div>
         )}
       </div>
@@ -2750,6 +3178,102 @@ function isMetaColumnId(value: string): value is MetaColumnId {
   return metaColumns.some((column) => column.id === value);
 }
 
+function insertCustomColumns(
+  baseColumns: Array<Extract<GridColumn, { kind: "meta" }>>,
+  customColumns: Array<Extract<GridColumn, { kind: "custom" }>>
+) {
+  const result: GridColumn[] = [...baseColumns];
+  const pending = [...customColumns];
+  let moved = true;
+
+  while (pending.length > 0 && moved) {
+    moved = false;
+    for (let index = pending.length - 1; index >= 0; index -= 1) {
+      const column = pending[index];
+      if (!column.afterColumnId) continue;
+      const anchorIndex = result.findIndex((item) => item.id === column.afterColumnId);
+      if (anchorIndex === -1) continue;
+      result.splice(anchorIndex + 1, 0, column);
+      pending.splice(index, 1);
+      moved = true;
+    }
+  }
+
+  return [...result, ...pending];
+}
+
+function mergeDraftRows(baseRows: StudentSheetRow[], draftRows: DraftStudentRow[]) {
+  if (draftRows.length === 0) return baseRows;
+
+  const result: StudentSheetRow[] = [];
+  const draftsByAnchor = new Map<string, DraftStudentRow[]>();
+  const visited = new Set<string>();
+
+  for (const draft of draftRows) {
+    const anchor = draft.afterRowId ?? "";
+    draftsByAnchor.set(anchor, [...(draftsByAnchor.get(anchor) ?? []), draft]);
+  }
+
+  function appendDrafts(anchor: string) {
+    const anchoredDrafts = draftsByAnchor.get(anchor) ?? [];
+    for (const draft of anchoredDrafts) {
+      if (visited.has(draft.id)) continue;
+      visited.add(draft.id);
+      result.push(draft);
+      appendDrafts(draft.id);
+    }
+  }
+
+  appendDrafts("");
+  for (const row of baseRows) {
+    result.push(row);
+    appendDrafts(row.id);
+  }
+  for (const draft of draftRows) {
+    if (visited.has(draft.id)) continue;
+    visited.add(draft.id);
+    result.push(draft);
+  }
+
+  return result;
+}
+
+function draftStudentHasContent(row: DraftStudentRow, readValue: (row: StudentSheetRow, columnId: string) => string) {
+  const metaColumnIds: EditableMetaColumnId[] = ["name", "phone", "parentPhone", "schoolName", "grade", "subject", "currentLevel", "memo"];
+  if (metaColumnIds.some((columnId) => readValue(row, columnId).trim())) return true;
+  return Object.values(row.customValues).some((value) => String(value ?? "").trim());
+}
+
+function studentDeleteConfirmMessage(
+  selectedRows: StudentSheetRow[],
+  persistedRows: StudentSheetRow[],
+  draftRows: DraftStudentRow[],
+  displayName: (row: StudentSheetRow) => string
+) {
+  if (selectedRows.length === 1) {
+    const row = selectedRows[0];
+    if (isDraftStudentRow(row)) {
+      const name = displayName(row).trim();
+      return name
+        ? `${name} 신규 학생 행을 삭제할까요? 아직 저장되지 않아 실제 학생 정보는 삭제되지 않습니다.`
+        : "저장되지 않은 신규 학생 행을 삭제할까요? 실제 학생 정보는 삭제되지 않습니다.";
+    }
+
+    const name = displayName(row).trim() || row.name || "이 학생";
+    return `${name} 학생을 삭제할까요? 실제 학생 정보와 연결된 기록이 삭제됩니다.`;
+  }
+
+  if (persistedRows.length > 0 && draftRows.length > 0) {
+    return `${persistedRows.length}명의 학생과 저장되지 않은 신규 행 ${draftRows.length}개를 삭제할까요? 실제 학생 정보와 연결된 기록이 삭제됩니다.`;
+  }
+
+  if (persistedRows.length > 0) {
+    return `${persistedRows.length}명의 학생을 삭제할까요? 실제 학생 정보와 연결된 기록이 삭제됩니다.`;
+  }
+
+  return `저장되지 않은 신규 학생 행 ${draftRows.length}개를 삭제할까요? 실제 학생 정보는 삭제되지 않습니다.`;
+}
+
 function metaCellValue(row: StudentSheetRow, columnId: MetaColumnId) {
   if (columnId === "rowNumber") return String(row.no);
   if (columnId === "name") return row.name;
@@ -2845,6 +3369,61 @@ function selectedEditableCells(selection: SelectionRange | null, rows: StudentSh
   return cells;
 }
 
+function replaceText(value: string, findText: string, replacementText: string, caseSensitive: boolean) {
+  if (!findText) return { value, changed: false };
+  if (caseSensitive) {
+    const nextValue = value.split(findText).join(replacementText);
+    return { value: nextValue, changed: nextValue !== value };
+  }
+
+  const matcher = new RegExp(escapeRegExp(findText), "gi");
+  const nextValue = value.replace(matcher, () => replacementText);
+  return { value: nextValue, changed: nextValue !== value };
+}
+
+function countReplaceChanges(
+  cells: ReturnType<typeof selectedEditableCells>,
+  findText: string,
+  replacementText: string,
+  caseSensitive: boolean,
+  readValue: (row: StudentSheetRow, columnId: string) => string,
+  buildMetaUpdate: (row: StudentSheetRow, columnId: EditableMetaColumnId, rawValue: string) => { displayValue: string; saveValue: string } | null
+) {
+  if (!findText) return 0;
+  let count = 0;
+  for (const cell of cells) {
+    const currentValue = readValue(cell.row, cell.column.id);
+    if (!currentValue) continue;
+    const replacement = replaceText(currentValue, findText, replacementText, caseSensitive);
+    if (!replacement.changed) continue;
+    if (cell.column.kind === "meta" && !buildMetaUpdate(cell.row, cell.column.id, replacement.value)) continue;
+    count += 1;
+  }
+  return count;
+}
+
+function replaceScopeDescription(
+  selection: SelectionRange | null,
+  rows: StudentSheetRow[],
+  columns: GridColumn[],
+  cells: ReturnType<typeof selectedEditableCells>
+) {
+  if (!selection || cells.length === 0) return "선택된 편집 가능 셀 없음";
+  const range = normalizeRange(selection);
+  const isSingleRow = range.startRow === range.endRow;
+  const isSingleColumn = range.startCol === range.endCol;
+  const includesAllColumns = range.startCol === 0 && range.endCol === columns.length - 1;
+  const includesAllRows = range.startRow === 0 && range.endRow === rows.length - 1;
+  if (isSingleRow && includesAllColumns) return `${range.startRow + 1}행`;
+  if (isSingleColumn && includesAllRows) return `${columns[range.startCol] ? columnLabel(columns[range.startCol]) : "선택"} 열`;
+  if (cells.length === 1) return "선택된 1개 셀";
+  return `선택된 ${cells.length}개 셀`;
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function selectedSheetCells(selection: SelectionRange | null, rows: StudentSheetRow[], columns: GridColumn[]) {
   if (!selection) return [];
   const range = normalizeRange(selection);
@@ -2927,6 +3506,126 @@ function totalTableWidth(columns: GridColumn[]) {
   return columns.reduce((sum, column) => sum + column.width, 0);
 }
 
+function normalizeSheetZoom(value: number) {
+  if (!Number.isFinite(value)) return 100;
+  return sheetZoomLevels.reduce((closest, level) => {
+    return Math.abs(level - value) < Math.abs(closest - value) ? level : closest;
+  }, 100);
+}
+
+function nextSheetZoom(current: number, direction: -1 | 1) {
+  const normalized = normalizeSheetZoom(current);
+  const currentIndex = sheetZoomLevels.findIndex((level) => level === normalized);
+  const nextIndex = Math.min(sheetZoomLevels.length - 1, Math.max(0, currentIndex + direction));
+  return sheetZoomLevels[nextIndex] ?? 100;
+}
+
+function zoomDimension(value: number, factor: number, min = 1) {
+  return Math.max(min, Math.round(value * factor));
+}
+
+function zoomPx(value: number, factor: number, min = 1) {
+  return `${zoomDimension(value, factor, min)}px`;
+}
+
+function buildSheetZoomStyles(factor: number) {
+  return {
+    sheetTable: { fontSize: zoomDimension(12, factor, 10) },
+    sheetTh: {
+      height: zoomDimension(54, factor, 40),
+      padding: `${zoomPx(6, factor)} ${zoomPx(6, factor)}`,
+    },
+    metaHeaderInner: {
+      gridTemplateColumns: `minmax(0, 1fr) ${zoomPx(22, factor, 16)}`,
+      gap: zoomDimension(3, factor),
+    },
+    metaHeaderButton: {
+      padding: `${zoomPx(2, factor)} ${zoomPx(4, factor)}`,
+      borderRadius: zoomDimension(5, factor),
+      fontSize: zoomDimension(12, factor, 9),
+    },
+    subSortButton: {
+      width: zoomDimension(22, factor, 16),
+      height: zoomDimension(22, factor, 16),
+      borderRadius: zoomDimension(5, factor),
+      fontSize: zoomDimension(10, factor, 8),
+    },
+    lessonGroupTh: { height: zoomDimension(lessonHeaderStickyTop, factor, 72) },
+    lessonHeaderTop: {
+      gridTemplateColumns: `1fr ${zoomPx(24, factor, 16)} ${zoomPx(24, factor, 16)}`,
+      gap: zoomDimension(4, factor),
+      minHeight: zoomDimension(30, factor, 22),
+      padding: `${zoomPx(4, factor)} ${zoomPx(5, factor)} ${zoomPx(2, factor)}`,
+    },
+    lessonNameInput: { fontSize: zoomDimension(14, factor, 10) },
+    lessonIconButton: {
+      width: zoomDimension(22, factor, 16),
+      height: zoomDimension(22, factor, 16),
+      borderRadius: zoomDimension(6, factor),
+      fontSize: zoomDimension(14, factor, 10),
+    },
+    lessonDateLine: {
+      gap: zoomDimension(3, factor),
+      minHeight: zoomDimension(22, factor, 17),
+      padding: `0 ${zoomPx(5, factor)} ${zoomPx(2, factor)}`,
+      fontSize: zoomDimension(12, factor, 9),
+    },
+    lessonDateInput: {
+      width: zoomDimension(96, factor, 72),
+      height: zoomDimension(20, factor, 16),
+      fontSize: zoomDimension(11, factor, 9),
+    },
+    lessonTimeInput: {
+      width: zoomDimension(42, factor, 32),
+      height: zoomDimension(20, factor, 16),
+      fontSize: zoomDimension(11, factor, 9),
+    },
+    lessonTimeSeparator: { fontSize: zoomDimension(11, factor, 9) },
+    lessonMemoRow: {
+      gridTemplateColumns: `${zoomPx(34, factor, 24)} minmax(0, 1fr)`,
+      minHeight: zoomDimension(23, factor, 17),
+    },
+    lessonMemoLabel: { fontSize: zoomDimension(11, factor, 9) },
+    lessonMemoInput: {
+      height: zoomDimension(22, factor, 16),
+      padding: `0 ${zoomPx(6, factor)}`,
+      fontSize: zoomDimension(11, factor, 9),
+    },
+    sheetSubTh: {
+      height: zoomDimension(30, factor, 22),
+      padding: `${zoomPx(3, factor)} ${zoomPx(4, factor)}`,
+    },
+    subHeaderInner: { gap: zoomDimension(3, factor) },
+    subHeaderButton: {
+      padding: `${zoomPx(2, factor)} ${zoomPx(4, factor)}`,
+      borderRadius: zoomDimension(5, factor),
+      fontSize: zoomDimension(12, factor, 9),
+    },
+    metaTd: {
+      height: zoomDimension(30, factor, 22),
+      padding: `${zoomPx(3, factor)} ${zoomPx(8, factor)}`,
+    },
+    lessonTd: { height: zoomDimension(30, factor, 22) },
+    cellInput: {
+      height: zoomDimension(29, factor, 21),
+      padding: `0 ${zoomPx(6, factor)}`,
+    },
+    nameEditInput: {
+      height: zoomDimension(22, factor, 17),
+      lineHeight: `${zoomDimension(22, factor, 17)}px`,
+    },
+    metaSelectInput: {
+      height: zoomDimension(24, factor, 18),
+      lineHeight: `${zoomDimension(24, factor, 18)}px`,
+      padding: `0 ${zoomPx(3, factor)}`,
+    },
+    cellDisplay: {
+      height: zoomDimension(29, factor, 21),
+      padding: `0 ${zoomPx(6, factor)}`,
+    },
+  } satisfies Record<string, CSSProperties>;
+}
+
 function readStoredNumber(key: string) {
   if (typeof window === "undefined") return null;
   const value = Number(window.localStorage.getItem(key));
@@ -2961,11 +3660,12 @@ function readStoredRecord<T>(key: string) {
   }
 }
 
-function styleToCss(style: CellStyle): CSSProperties {
+function styleToCss(style: CellStyle, zoomFactor = 1): CSSProperties {
+  const parsedFontSize = style.fontSize ? Number(style.fontSize) : null;
   return {
     background: style.fill,
     fontFamily: style.fontFamily,
-    fontSize: style.fontSize ? `${style.fontSize}px` : undefined,
+    fontSize: parsedFontSize && Number.isFinite(parsedFontSize) ? `${zoomDimension(parsedFontSize, zoomFactor, 8)}px` : undefined,
     fontWeight: style.bold ? 700 : undefined,
     fontStyle: style.italic ? "italic" : undefined,
     textDecoration: style.underline ? "underline" : undefined,
@@ -3174,6 +3874,140 @@ const contextMenuSeparator: CSSProperties = {
   background: "#e5e7eb",
 };
 
+const replaceModalOverlay: CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  zIndex: 1700,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: 20,
+  background: "rgba(15, 23, 42, 0.34)",
+};
+
+const replaceModal: CSSProperties = {
+  width: "min(440px, 92vw)",
+  background: "#ffffff",
+  border: "1px solid #dbe3ef",
+  borderRadius: 10,
+  boxShadow: "0 24px 58px rgba(15, 23, 42, 0.24)",
+  overflow: "hidden",
+};
+
+const replaceModalHeader: CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 12,
+  padding: "14px 16px 10px",
+  borderBottom: "1px solid #e5e7eb",
+};
+
+const replaceModalTitle: CSSProperties = {
+  margin: 0,
+  fontSize: 17,
+  fontWeight: 950,
+};
+
+const replaceModalDesc: CSSProperties = {
+  margin: "5px 0 0",
+  color: "#64748b",
+  fontSize: 12,
+  fontWeight: 800,
+};
+
+const replaceCloseButton: CSSProperties = {
+  width: 28,
+  height: 28,
+  border: "1px solid #cbd5e1",
+  borderRadius: 7,
+  background: "#ffffff",
+  color: "#111827",
+  fontSize: 19,
+  cursor: "pointer",
+};
+
+const replaceModalBody: CSSProperties = {
+  display: "grid",
+  gap: 10,
+  padding: 16,
+};
+
+const replaceLabel: CSSProperties = {
+  display: "grid",
+  gap: 5,
+  color: "#111827",
+  fontSize: 12,
+  fontWeight: 900,
+};
+
+const replaceInput: CSSProperties = {
+  height: 34,
+  border: "1px solid #cbd5e1",
+  borderRadius: 7,
+  padding: "0 10px",
+  color: "#111827",
+  fontWeight: 800,
+  outline: "none",
+};
+
+const replaceCheckLabel: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 7,
+  color: "#475569",
+  fontSize: 12,
+  fontWeight: 800,
+};
+
+const replacePreviewBox: CSSProperties = {
+  minHeight: 30,
+  display: "flex",
+  alignItems: "center",
+  padding: "7px 10px",
+  border: "1px solid #e2e8f0",
+  borderRadius: 7,
+  background: "#f8fafc",
+  color: "#334155",
+  fontSize: 12,
+  fontWeight: 900,
+};
+
+const replaceModalFooter: CSSProperties = {
+  display: "flex",
+  justifyContent: "flex-end",
+  gap: 8,
+  padding: 12,
+  borderTop: "1px solid #e5e7eb",
+  background: "#ffffff",
+};
+
+const replaceSecondaryButton: CSSProperties = {
+  height: 32,
+  border: "1px solid #cbd5e1",
+  borderRadius: 7,
+  background: "#ffffff",
+  color: "#111827",
+  padding: "0 12px",
+  fontWeight: 900,
+  cursor: "pointer",
+};
+
+const replacePrimaryButton: CSSProperties = {
+  height: 32,
+  border: 0,
+  borderRadius: 7,
+  background: "#111827",
+  color: "#ffffff",
+  padding: "0 13px",
+  fontWeight: 950,
+  cursor: "pointer",
+};
+
+const replaceDisabledButton: CSSProperties = {
+  opacity: 0.42,
+  cursor: "not-allowed",
+};
+
 const selectionBadge: CSSProperties = {
   marginLeft: "auto",
   padding: "3px 8px",
@@ -3219,6 +4053,45 @@ const toolbarButton: CSSProperties = {
   fontSize: 12,
   fontWeight: 700,
   cursor: "pointer",
+};
+
+const zoomControl: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  height: 30,
+  border: "1px solid #cbd5e1",
+  borderRadius: 7,
+  overflow: "hidden",
+  background: "#ffffff",
+};
+
+const zoomButton: CSSProperties = {
+  width: 30,
+  height: 28,
+  border: 0,
+  borderRight: "1px solid #e2e8f0",
+  background: "transparent",
+  color: "#111827",
+  fontSize: 14,
+  fontWeight: 950,
+  cursor: "pointer",
+};
+
+const zoomValueButton: CSSProperties = {
+  minWidth: 54,
+  height: 28,
+  border: 0,
+  borderRight: "1px solid #e2e8f0",
+  background: "#f8fafc",
+  color: "#111827",
+  fontSize: 12,
+  fontWeight: 900,
+  cursor: "pointer",
+};
+
+const disabledZoomButton: CSSProperties = {
+  opacity: 0.35,
+  cursor: "not-allowed",
 };
 
 const toolbarSpacer: CSSProperties = {
@@ -3870,6 +4743,40 @@ const rowHeaderTd: CSSProperties = {
 const clickableMetaTd: CSSProperties = {
   cursor: "pointer",
 };
+
+const draftRowStyle: CSSProperties = {
+  background: "#fffdf0",
+};
+
+const draftCellStyle: CSSProperties = {
+  background: "#fffdf0",
+};
+
+const draftRowHeaderTd: CSSProperties = {
+  background: "#fef3c7",
+  color: "#92400e",
+};
+
+const draftRowBadge: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  minWidth: 34,
+  height: 18,
+  padding: "0 6px",
+  borderRadius: 999,
+  background: "#fef3c7",
+  color: "#92400e",
+  fontSize: 11,
+  fontWeight: 950,
+};
+
+const draftNamePlaceholder: CSSProperties = {
+  color: "#b45309",
+  fontSize: 12,
+  fontWeight: 850,
+};
+
 const lessonTd: CSSProperties = {
   height: 30,
   padding: 0,

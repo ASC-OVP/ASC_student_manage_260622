@@ -4,15 +4,41 @@ import { requireUser } from "@/lib/auth";
 import { getAssistantWorkNotes, type AssistantWorkNote } from "@/lib/assistantWorkNotes";
 import { prisma } from "@/lib/prisma";
 import type { AssistantWorkShift, User } from "@/lib/generated/prisma";
-import { deleteWorkShiftAction, saveAssistantWorkNoteAction, saveWorkShiftAction } from "./actions";
+import WorkConfirmSubmit from "./WorkConfirmSubmit";
+import { deleteWorkShiftAction, saveAssistantWorkNoteAction, saveWorkShiftAction, updatePayrollSettlementAction } from "./actions";
+import { getPayrollSettlements, isPayrollClosed, payrollSettlementKey, type PayrollSettlementRecord, type PayrollSettlements } from "./payrollSettlements";
 
 export const dynamic = "force-dynamic";
 
 type Props = {
-  searchParams?: Promise<{ assistantId?: string; month?: string; date?: string; shiftId?: string }>;
+  searchParams?: Promise<{
+    assistantId?: string;
+    month?: string;
+    date?: string;
+    shiftId?: string;
+    q?: string;
+    status?: string;
+    from?: string;
+    to?: string;
+    confirmed?: string;
+  }>;
 };
 
-type ShiftRow = AssistantWorkShift & { assistant: Pick<User, "id" | "name"> };
+type AssistantOption = Pick<User, "id" | "name" | "loginId" | "role" | "isActive">;
+type ShiftRow = AssistantWorkShift & {
+  assistant: Pick<User, "id" | "name">;
+  createdBy: Pick<User, "id" | "name" | "role"> | null;
+};
+type ShiftStatusFilter = "all" | "SCHEDULED" | "WORKED" | "ABSENT" | "CANCELLED";
+type ConfirmedFilter = "all" | "confirmed" | "unconfirmed";
+
+const shiftStatusOptions: Array<{ value: ShiftStatusFilter; label: string }> = [
+  { value: "all", label: "전체 상태" },
+  { value: "SCHEDULED", label: "예정/미확정" },
+  { value: "WORKED", label: "근무 완료" },
+  { value: "ABSENT", label: "결근" },
+  { value: "CANCELLED", label: "취소" },
+];
 
 export default async function WorkPage({ searchParams }: Props = {}) {
   const user = await requireUser();
@@ -21,6 +47,11 @@ export default async function WorkPage({ searchParams }: Props = {}) {
   const month = monthValue(params.month) || toYm(new Date());
   const { start, end } = monthRange(month);
   const selectedDate = selectedDateValue(params.date, month);
+  const query = (params.q ?? "").trim();
+  const statusFilter = shiftStatusValue(params.status);
+  const confirmedFilter = confirmedValue(params.confirmed);
+  const fromDate = boundedDate(params.from, start, end);
+  const toDate = boundedDate(params.to, start, end);
 
   const assistants = await prisma.user.findMany({
     where: { academyId: user.academyId, role: "ASSISTANT", isActive: true },
@@ -28,177 +59,400 @@ export default async function WorkPage({ searchParams }: Props = {}) {
     select: { id: true, name: true, loginId: true, role: true, isActive: true },
   });
 
-  const selectedAssistantId = managerView
-    ? assistants.some((assistant) => assistant.id === params.assistantId)
-      ? params.assistantId!
-      : assistants[0]?.id ?? ""
-    : user.id;
+  const selectedAssistantId = resolveSelectedAssistantId({
+    managerView,
+    requestedAssistantId: params.assistantId,
+    assistants,
+    userId: user.id,
+  });
+  const selectedAssistant =
+    selectedAssistantId !== "all"
+      ? assistants.find((assistant) => assistant.id === selectedAssistantId) ??
+        (user.id === selectedAssistantId
+          ? { id: user.id, name: user.name, loginId: user.loginId, role: user.role, isActive: user.isActive }
+          : null)
+      : null;
 
-  const [selectedAssistant, shifts] = await Promise.all([
-    selectedAssistantId
-      ? prisma.user.findFirst({
-          where: { id: selectedAssistantId, academyId: user.academyId },
-          select: { id: true, name: true, loginId: true, role: true, isActive: true },
-        })
-      : null,
-    selectedAssistantId
-      ? prisma.assistantWorkShift.findMany({
-          where: {
-            academyId: user.academyId,
-            assistantId: selectedAssistantId,
-            workDate: { gte: start, lte: end },
-          },
-          orderBy: [{ workDate: "asc" }, { startTime: "asc" }],
-          include: { assistant: { select: { id: true, name: true } } },
-        })
-      : [],
+  const [monthShifts, settlements, assistantNotes] = await Promise.all([
+    prisma.assistantWorkShift.findMany({
+      where: {
+        academyId: user.academyId,
+        workDate: { gte: start, lte: end },
+        ...(managerView ? {} : { assistantId: user.id }),
+      },
+      orderBy: [{ workDate: "asc" }, { startTime: "asc" }],
+      include: {
+        assistant: { select: { id: true, name: true } },
+        createdBy: { select: { id: true, name: true, role: true } },
+      },
+    }),
+    getPayrollSettlements(user.academyId),
+    managerView ? getAssistantWorkNotes(user.academyId) : Promise.resolve({} as Record<string, AssistantWorkNote>),
   ]);
-  const assistantNotes = managerView ? await getAssistantWorkNotes(user.academyId) : {};
-  const selectedAssistantNote = selectedAssistantId ? assistantNotes[selectedAssistantId] : undefined;
 
-  const summary = summarizeShifts(shifts);
-  const selectedDateShifts = shifts.filter((shift) => shift.workDate === selectedDate);
+  const scopedShifts = selectedAssistantId === "all" ? monthShifts : monthShifts.filter((shift) => shift.assistantId === selectedAssistantId);
+  const tableShifts = filterShifts(scopedShifts, {
+    query,
+    status: statusFilter,
+    from: fromDate,
+    to: toDate,
+    confirmed: confirmedFilter,
+    settlements,
+    month,
+  });
+  const summary = summarizeShifts(scopedShifts);
+  const selectedDateShifts = scopedShifts.filter((shift) => shift.workDate === selectedDate);
   const selectedSummary = summarizeShifts(selectedDateShifts);
-  const selectedShift = selectedDateShifts.find((shift) => shift.id === params.shiftId) ?? null;
+  const selectedShift = selectedAssistantId !== "all" ? selectedDateShifts.find((shift) => shift.id === params.shiftId) ?? null : null;
+  const selectedSettlement = selectedAssistantId !== "all" ? settlements[payrollSettlementKey(selectedAssistantId, month)] : undefined;
+  const selectedClosed = isPayrollClosed(selectedSettlement);
+  const selectedAssistantNote = selectedAssistantId !== "all" ? assistantNotes[selectedAssistantId] : undefined;
+  const payrollStatus = payrollScopeStatus(selectedAssistantId, scopedShifts, settlements, month);
+  const payLabel = selectedSettlement ? "확정 급여" : "예상 급여";
+  const monthNav = monthNavigation(month);
 
   return (
     <main style={page}>
       <section style={container}>
         <header style={header}>
           <div>
-            <p style={eyebrow}>근무시간 / 월급</p>
-            <h1 style={title}>{managerView ? "조교 근무 관리" : "내 근무표"}</h1>
+            <p style={eyebrow}>근무/급여</p>
+            <h1 style={title}>월별 근무 정산</h1>
             <p style={desc}>
               {managerView
-                ? "조교별 월급 캘린더에서 날짜를 눌러 근무를 바로 수정합니다."
-                : "캘린더에서 날짜를 눌러 내 근무시간, 결근, 메모를 직접 수정합니다."}
+                ? "선택한 월의 근무 기록, 급여 상태, 마감 여부를 한 화면에서 확인합니다."
+                : "내 근무 기록과 이번 달 예상 급여, 정산 상태를 확인합니다."}
             </p>
           </div>
-          <form style={monthForm}>
-            {managerView && selectedAssistantId && <input type="hidden" name="assistantId" value={selectedAssistantId} />}
-            <input name="month" type="month" defaultValue={month} style={input} />
-            <button style={smallGhost}>월 이동</button>
-          </form>
+          <div style={monthTools}>
+            <Link href={workHref({ assistantId: selectedAssistantId, month: monthNav.previous, date: monthNav.previousDate, managerView })} style={smallGhostLink}>
+              이전 달
+            </Link>
+            <form style={monthForm}>
+              {managerView && <input type="hidden" name="assistantId" value={selectedAssistantId} />}
+              <input name="month" type="month" defaultValue={month} style={input} />
+              <button style={smallGhost}>월 이동</button>
+            </form>
+            <Link href={workHref({ assistantId: selectedAssistantId, month: toYm(new Date()), date: toYmd(new Date()), managerView })} style={smallGhostLink}>
+              이번 달
+            </Link>
+          </div>
         </header>
 
         <section style={layout(managerView)}>
           {managerView && (
             <aside style={assistantPanel}>
-              <h2 style={panelTitle}>조교 목록</h2>
+              <h2 style={panelTitle}>직원/조교</h2>
               <div style={assistantList}>
-                {assistants.map((assistant) => (
-                  <Link
-                    key={assistant.id}
-                    href={workHref({ assistantId: assistant.id, month, date: selectedDate, managerView: true })}
-                    style={assistant.id === selectedAssistantId ? activeAssistantLink : assistantLink}
-                  >
-                    <b>{assistant.name}</b>
-                    <span>{assistant.loginId}</span>
-                  </Link>
-                ))}
+                <AssistantLink
+                  href={workHref({ assistantId: "all", month, date: selectedDate, managerView })}
+                  active={selectedAssistantId === "all"}
+                  name="전체 직원"
+                  meta={payrollScopeStatus("all", monthShifts, settlements, month)}
+                />
+                {assistants.map((assistant) => {
+                  const assistantShifts = monthShifts.filter((shift) => shift.assistantId === assistant.id);
+                  return (
+                    <AssistantLink
+                      key={assistant.id}
+                      href={workHref({ assistantId: assistant.id, month, date: selectedDate, managerView })}
+                      active={assistant.id === selectedAssistantId}
+                      name={assistant.name}
+                      loginId={assistant.loginId}
+                      meta={`${formatWon(summarizeShifts(assistantShifts).pay)}원 · ${payrollStatusText(settlements[payrollSettlementKey(assistant.id, month)])}`}
+                    />
+                  );
+                })}
                 {assistants.length === 0 && <Empty>등록된 조교가 없습니다.</Empty>}
               </div>
             </aside>
           )}
 
           <div style={mainColumn}>
-            <section style={salaryCalendarPanel}>
+            <section style={settlementPanel}>
               <div style={salaryTop}>
                 <div>
-                  <span style={badge}>{selectedAssistant?.isActive ? "활성" : "비활성"}</span>
+                  <span style={payrollBadgeStyle(selectedSettlement)}>{payrollStatus}</span>
                   <h2 style={monthTitle}>{monthTitleText(month)}</h2>
-                  <p style={desc}>{selectedAssistant?.name ?? user.name} · {selectedAssistant?.loginId ?? user.loginId}</p>
+                  <p style={desc}>
+                    {selectedAssistant
+                      ? `${selectedAssistant.name} · ${selectedAssistant.loginId}`
+                      : managerView
+                        ? "전체 직원 월별 정산"
+                        : `${user.name} · ${user.loginId}`}
+                  </p>
                 </div>
                 <div style={payTotalBox}>
-                  <span>예상 월급</span>
-                  <b>{formatWon(summary.pay)}원</b>
+                  <span>{payLabel}</span>
+                  <b>{formatWon(selectedSettlement?.totalPay ?? summary.pay)}원</b>
+                  <small>{selectedSettlement ? `${formatDateTime(selectedSettlement.updatedAt)} 기준` : "근무 기록 기준 자동 계산"}</small>
                 </div>
               </div>
 
               <div style={summaryGrid}>
-                <Summary label="총 근무시간" value={formatHours(summary.minutes)} />
-                <Summary label="근무일" value={`${summary.workDays}일`} />
-                <Summary label="결근/취소" value={`${summary.absentDays}일`} tone={summary.absentDays ? "warn" : "default"} />
-                <Summary label="선택일 급여" value={`${formatWon(selectedSummary.pay)}원`} tone="money" />
+                <Summary label="총 근무 시간" value={formatHours(summary.minutes)} />
+                <Summary label={payLabel} value={`${formatWon(selectedSettlement?.totalPay ?? summary.pay)}원`} tone="money" />
+                <Summary label="미확정 근무 기록" value={`${summary.scheduledCount}건`} tone={summary.scheduledCount ? "warn" : "default"} />
+                <Summary label="지급 완료 여부" value={payrollStatus} tone={selectedSettlement?.status === "PAID" ? "success" : selectedSettlement ? "default" : "warn"} />
+                <Summary label="지각/결근/취소" value={`${summary.absentDays}건`} tone={summary.absentDays ? "warn" : "default"} />
+                <Summary label="수정/요청" value={`${summary.revisionCount + summary.requestCount}건`} tone={summary.revisionCount + summary.requestCount ? "warn" : "default"} />
               </div>
 
-              {selectedAssistantId ? (
-                <section style={workBoard}>
-                  <div style={calendarPane}>
-                    <SalaryMonthCalendar
-                      month={month}
-                      shifts={shifts}
-                      selectedDate={selectedDate}
-                      assistantId={selectedAssistantId}
-                      managerView={managerView}
-                    />
-                  </div>
-                  <aside style={sideWorkPane}>
-                    {managerView && selectedAssistantId && (
-                      <AssistantWorkNoteForm assistantId={selectedAssistantId} note={selectedAssistantNote} />
-                    )}
+              <PayrollSettlementBox
+                managerView={managerView}
+                assistantId={selectedAssistantId}
+                assistantName={selectedAssistant?.name}
+                month={month}
+                summary={summary}
+                settlement={selectedSettlement}
+              />
+            </section>
 
-                    <div style={panelHead}>
-                      <div>
-                        <h2 style={panelTitle}>{longDateText(selectedDate)}</h2>
-                        <p style={softText}>
-                          {selectedDateShifts.length > 0
-                            ? `${formatHours(selectedSummary.minutes)} · ${formatWon(selectedSummary.pay)}원`
-                            : "날짜를 눌러 근무를 저장합니다."}
-                        </p>
-                      </div>
+            <section style={tablePanel}>
+              <div style={sectionHead}>
+                <div>
+                  <h2 style={panelTitle}>근무 기록</h2>
+                  <p style={softText}>선택 월 {scopedShifts.length}건 중 {tableShifts.length}건 표시</p>
+                </div>
+              </div>
+
+              <form style={filterBar}>
+                {managerView && (
+                  <select name="assistantId" defaultValue={selectedAssistantId} style={input}>
+                    <option value="all">전체 직원</option>
+                    {assistants.map((assistant) => (
+                      <option key={assistant.id} value={assistant.id}>{assistant.name}</option>
+                    ))}
+                  </select>
+                )}
+                <input type="hidden" name="month" value={month} />
+                <input type="hidden" name="date" value={selectedDate} />
+                <input name="q" defaultValue={query} placeholder="직원명 검색" style={{ ...input, minWidth: 180 }} />
+                <select name="status" defaultValue={statusFilter} style={input}>
+                  {shiftStatusOptions.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+                <input name="from" type="date" defaultValue={fromDate} min={start} max={end} style={input} />
+                <input name="to" type="date" defaultValue={toDate} min={start} max={end} style={input} />
+                <select name="confirmed" defaultValue={confirmedFilter} style={input}>
+                  <option value="all">관리자 확인 전체</option>
+                  <option value="confirmed">확인됨</option>
+                  <option value="unconfirmed">미확인</option>
+                </select>
+                <button style={smallPrimaryButton}>필터 적용</button>
+                <Link href={workHref({ assistantId: selectedAssistantId, month, date: selectedDate, managerView })} style={smallGhostLink}>초기화</Link>
+              </form>
+
+              <div style={tableWrap}>
+                <table style={workTable}>
+                  <thead>
+                    <tr>
+                      <th style={th}>날짜</th>
+                      <th style={th}>직원명</th>
+                      <th style={th}>출근 시간</th>
+                      <th style={th}>퇴근 시간</th>
+                      <th style={th}>총 근무 시간</th>
+                      <th style={th}>상태</th>
+                      <th style={th}>메모</th>
+                      <th style={th}>수정 여부</th>
+                      <th style={th}>관리자 확인</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tableShifts.map((shift) => {
+                      const settlement = settlements[payrollSettlementKey(shift.assistantId, shift.workDate.slice(0, 7))];
+                      const detailHref = workHref({ assistantId: shift.assistantId, month, date: shift.workDate, shiftId: shift.id, managerView });
+                      return (
+                        <tr key={shift.id}>
+                          <td style={td}><Link href={detailHref} style={tableLink}>{dateText(shift.workDate)}</Link></td>
+                          <td style={td}>{shift.assistant.name}</td>
+                          <td style={td}>{shift.startTime}</td>
+                          <td style={td}>{shift.endTime}</td>
+                          <td style={td}>{formatHours(shiftMinutes(shift))}</td>
+                          <td style={td}><span style={statusBadge(shift.status)}>{shiftStatusText(shift.status)}</span></td>
+                          <td style={{ ...td, ...memoCell }}>{shift.memo || "-"}</td>
+                          <td style={td}>{isEditedShift(shift) ? <span style={warnPill}>수정됨</span> : <span style={mutedText}>없음</span>}</td>
+                          <td style={td}><span style={payrollBadgeStyle(settlement)}>{payrollStatusText(settlement)}</span></td>
+                        </tr>
+                      );
+                    })}
+                    {tableShifts.length === 0 && (
+                      <tr>
+                        <td colSpan={9} style={emptyTd}>조건에 맞는 근무 기록이 없습니다.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            {selectedAssistantId !== "all" && selectedAssistant ? (
+              <section style={workBoard}>
+                <div style={calendarPane}>
+                  <section style={calendarPanel}>
+                    <div style={sectionHead}>
+                      <h2 style={panelTitle}>월간 캘린더</h2>
                       <Link href={workHref({ assistantId: selectedAssistantId, month: toYm(new Date()), date: toYmd(new Date()), managerView })} style={smallLink}>
                         오늘
                       </Link>
                     </div>
+                    <SalaryMonthCalendar month={month} shifts={scopedShifts} selectedDate={selectedDate} assistantId={selectedAssistantId} managerView={managerView} />
+                  </section>
+                </div>
+                <aside style={sideWorkPane}>
+                  {managerView && <AssistantWorkNoteForm assistantId={selectedAssistantId} note={selectedAssistantNote} />}
 
-                    {selectedShift ? (
-                      <section style={detailPane}>
-                        <div style={detailTitleRow}>
-                          <span style={statusBadge(selectedShift.status)}>{shiftChipText(selectedShift)}</span>
-                          <Link href={workHref({ assistantId: selectedAssistantId, month, date: selectedDate, managerView })} style={smallLink}>
-                            새 근무
-                          </Link>
-                        </div>
-                        <ShiftForm key={selectedShift.id} shift={selectedShift} assistantId={selectedAssistantId} managerView={managerView} />
-                        <form action={deleteWorkShiftAction}>
-                          <input type="hidden" name="shiftId" value={selectedShift.id} />
-                          <button style={dangerButton}>삭제</button>
-                        </form>
-                      </section>
-                    ) : (
-                      <ShiftForm key={`${selectedAssistantId}:${selectedDate}:new`} assistantId={selectedAssistantId} defaultDate={selectedDate} managerView={managerView} />
-                    )}
-
-                    <div style={dayShiftList}>
-                      <h3 style={smallSectionTitle}>선택일 근무 내역</h3>
-                      {selectedDateShifts.map((shift) => (
-                        <div key={shift.id} style={dayShiftItem}>
-                          <div style={dayShiftSummary}>
-                            <span style={statusBadge(shift.status)}>{shiftChipText(shift)}</span>
-                            <b>{shift.startTime} ~ {shift.endTime}</b>
-                            <span>{formatWon(shiftPay(shift))}원</span>
-                          </div>
-                          <Link
-                            href={workHref({ assistantId: selectedAssistantId, month, date: shift.workDate, shiftId: shift.id, managerView })}
-                            style={detailButton}
-                          >
-                            상세
-                          </Link>
-                        </div>
-                      ))}
-                      {selectedDateShifts.length === 0 && <Empty>선택한 날짜에 등록된 근무가 없습니다.</Empty>}
+                  <div style={panelHead}>
+                    <div>
+                      <h2 style={panelTitle}>{longDateText(selectedDate)}</h2>
+                      <p style={softText}>
+                        {selectedDateShifts.length > 0
+                          ? `${formatHours(selectedSummary.minutes)} · ${formatWon(selectedSummary.pay)}원`
+                          : "날짜를 눌러 근무를 저장합니다."}
+                      </p>
                     </div>
-                  </aside>
-                </section>
-              ) : (
-                <Empty>근무를 등록할 조교를 먼저 추가해 주세요.</Empty>
-              )}
-            </section>
+                    <span style={payrollBadgeStyle(selectedSettlement)}>{selectedClosed ? "마감 월" : "수정 가능"}</span>
+                  </div>
+
+                  {selectedShift ? (
+                    <section style={detailPane}>
+                      <div style={detailTitleRow}>
+                        <span style={statusBadge(selectedShift.status)}>{shiftStatusText(selectedShift.status)}</span>
+                        <Link href={workHref({ assistantId: selectedAssistantId, month, date: selectedDate, managerView })} style={smallLink}>
+                          새 근무
+                        </Link>
+                      </div>
+                      <ShiftForm
+                        key={selectedShift.id}
+                        shift={selectedShift}
+                        assistantId={selectedAssistantId}
+                        isClosed={selectedClosed}
+                      />
+                      <form action={deleteWorkShiftAction} style={closedEditBox}>
+                        <input type="hidden" name="shiftId" value={selectedShift.id} />
+                        {selectedClosed && (
+                          <label style={label}>마감 후 삭제 사유
+                            <input name="editReason" required placeholder="삭제 사유를 입력해야 합니다." style={input} />
+                          </label>
+                        )}
+                        <WorkConfirmSubmit message={`${selectedAssistant.name}의 ${selectedShift.workDate} 근무 기록을 삭제할까요?`} style={dangerButton}>
+                          근무 기록 삭제
+                        </WorkConfirmSubmit>
+                      </form>
+                    </section>
+                  ) : (
+                    <ShiftForm
+                      key={`${selectedAssistantId}:${selectedDate}:new`}
+                      assistantId={selectedAssistantId}
+                      defaultDate={selectedDate}
+                      isClosed={selectedClosed}
+                    />
+                  )}
+
+                  <div style={dayShiftList}>
+                    <h3 style={smallSectionTitle}>선택일 근무 내역</h3>
+                    {selectedDateShifts.map((shift) => (
+                      <div key={shift.id} style={dayShiftItem}>
+                        <div style={dayShiftSummary}>
+                          <span style={statusBadge(shift.status)}>{shiftStatusText(shift.status)}</span>
+                          <b>{shift.startTime} ~ {shift.endTime}</b>
+                          <span>{formatWon(shiftPay(shift))}원</span>
+                        </div>
+                        <Link href={workHref({ assistantId: selectedAssistantId, month, date: shift.workDate, shiftId: shift.id, managerView })} style={detailButton}>
+                          상세
+                        </Link>
+                      </div>
+                    ))}
+                    {selectedDateShifts.length === 0 && <Empty>선택한 날짜에 등록된 근무가 없습니다.</Empty>}
+                  </div>
+                </aside>
+              </section>
+            ) : (
+              <section style={calendarPanel}>
+                <Empty>직원을 선택하면 월간 캘린더와 근무 등록 폼을 사용할 수 있습니다.</Empty>
+              </section>
+            )}
           </div>
         </section>
       </section>
     </main>
+  );
+}
+
+function AssistantLink({ href, active, name, loginId, meta }: { href: string; active: boolean; name: string; loginId?: string; meta: string }) {
+  return (
+    <Link href={href} style={active ? activeAssistantLink : assistantLink}>
+      <b>{name}</b>
+      <span>{[loginId, meta].filter(Boolean).join(" · ")}</span>
+    </Link>
+  );
+}
+
+function PayrollSettlementBox({
+  managerView,
+  assistantId,
+  assistantName,
+  month,
+  summary,
+  settlement,
+}: {
+  managerView: boolean;
+  assistantId: string;
+  assistantName?: string;
+  month: string;
+  summary: ReturnType<typeof summarizeShifts>;
+  settlement?: PayrollSettlementRecord;
+}) {
+  if (assistantId === "all") {
+    return <p style={settlementNotice}>전체 보기에서는 직원별 정산 상태를 확인합니다. 급여 확정은 왼쪽에서 직원을 선택한 뒤 진행합니다.</p>;
+  }
+
+  if (!managerView) {
+    return <p style={settlementNotice}>정산 상태: {payrollStatusText(settlement)}. 급여 확정과 지급 처리는 관리자 화면에서 진행됩니다.</p>;
+  }
+
+  return (
+    <form action={updatePayrollSettlementAction} style={settlementActionBox}>
+      <input type="hidden" name="assistantId" value={assistantId} />
+      <input type="hidden" name="month" value={month} />
+      <div>
+        <h3 style={smallSectionTitle}>{assistantName ?? "직원"} 월 정산 처리</h3>
+        <p style={softText}>
+          현재 계산값: {formatHours(summary.minutes)} · {formatWon(summary.pay)}원 · {summary.totalCount}건
+          {settlement ? ` / 마지막 처리: ${settlement.updatedByName} · ${formatDateTime(settlement.updatedAt)}` : ""}
+        </p>
+      </div>
+      <input name="settlementNote" defaultValue={settlement?.note ?? ""} placeholder="정산 메모 또는 마감 해제 사유" style={input} />
+      <div style={settlementButtons}>
+        <WorkConfirmSubmit
+          name="settlementStatus"
+          value="FINALIZED"
+          message={`${assistantName ?? "직원"}의 ${monthTitleText(month)} 급여를 확정할까요?`}
+          style={primaryButton}
+        >
+          급여 확정
+        </WorkConfirmSubmit>
+        <WorkConfirmSubmit
+          name="settlementStatus"
+          value="PAID"
+          message={`${assistantName ?? "직원"}의 ${monthTitleText(month)} 급여를 지급 완료로 표시할까요?`}
+          style={successButton}
+        >
+          지급 완료
+        </WorkConfirmSubmit>
+        {settlement && (
+          <WorkConfirmSubmit
+            name="settlementStatus"
+            value="OPEN"
+            message={`${assistantName ?? "직원"}의 ${monthTitleText(month)} 마감을 해제할까요?`}
+            style={dangerButton}
+          >
+            마감 해제
+          </WorkConfirmSubmit>
+        )}
+      </div>
+    </form>
   );
 }
 
@@ -246,7 +500,6 @@ function SalaryMonthCalendar({
 }) {
   const days = calendarDays(month);
   const shiftsByDate = groupShiftsByDate(shifts);
-  const currentMonth = month;
   const today = toYmd(new Date());
 
   return (
@@ -261,7 +514,7 @@ function SalaryMonthCalendar({
           const date = toYmd(day);
           const dayShifts = shiftsByDate.get(date) ?? [];
           const daySummary = summarizeShifts(dayShifts);
-          const inMonth = date.startsWith(currentMonth);
+          const inMonth = date.startsWith(month);
           const selected = date === selectedDate;
           const dayOfWeek = day.getDay();
           const visibleShifts = dayShifts.slice(0, 2);
@@ -283,7 +536,7 @@ function SalaryMonthCalendar({
               </div>
               <div style={shiftChipStack}>
                 {visibleShifts.map((shift) => (
-                  <span key={shift.id} style={shiftChipStyle(shift.status)}>{shiftChipText(shift)}</span>
+                  <span key={shift.id} style={shiftChipStyle(shift.status)}>{shiftStatusText(shift.status)}</span>
                 ))}
                 {dayShifts.length > visibleShifts.length && <span style={moreChip}>+{dayShifts.length - visibleShifts.length}</span>}
               </div>
@@ -296,35 +549,46 @@ function SalaryMonthCalendar({
   );
 }
 
-function ShiftForm({ assistantId, defaultDate, managerView, shift }: { assistantId: string; defaultDate?: string; managerView: boolean; shift?: ShiftRow }) {
+function ShiftForm({ assistantId, defaultDate, shift, isClosed }: { assistantId: string; defaultDate?: string; shift?: ShiftRow; isClosed: boolean }) {
   return (
     <form action={saveWorkShiftAction} style={shiftForm}>
       {shift && <input type="hidden" name="shiftId" value={shift.id} />}
       <input type="hidden" name="assistantId" value={assistantId} />
       <label style={label}>근무일<input name="workDate" type="date" required defaultValue={shift?.workDate ?? defaultDate ?? ""} style={input} /></label>
-      <label style={label}>시작<input name="startTime" type="time" required defaultValue={shift?.startTime ?? "14:00"} style={input} /></label>
-      <label style={label}>종료<input name="endTime" type="time" required defaultValue={shift?.endTime ?? "18:00"} style={input} /></label>
+      <label style={label}>출근 시간<input name="startTime" type="time" required defaultValue={shift?.startTime ?? "14:00"} style={input} /></label>
+      <label style={label}>퇴근 시간<input name="endTime" type="time" required defaultValue={shift?.endTime ?? "18:00"} style={input} /></label>
       <label style={label}>휴게(분)<input name="breakMinutes" type="number" min={0} defaultValue={shift?.breakMinutes ?? 0} style={input} /></label>
       <label style={label}>시급<input name="hourlyWage" type="number" min={0} defaultValue={shift?.hourlyWage ?? 0} style={input} /></label>
       <label style={label}>상태
         <select name="status" defaultValue={shift?.status ?? "SCHEDULED"} style={input}>
-          <option value="SCHEDULED">예정</option>
+          <option value="SCHEDULED">예정/미확정</option>
           <option value="WORKED">근무 완료</option>
-          <option value="ABSENT">못 나옴</option>
+          <option value="ABSENT">결근</option>
           <option value="CANCELLED">취소</option>
         </select>
       </label>
-      <label style={{ ...label, gridColumn: managerView ? "1 / -1" : "1 / -1" }}>메모
+      <label style={{ ...label, gridColumn: "1 / -1" }}>메모
         <input name="memo" defaultValue={shift?.memo ?? ""} style={input} />
       </label>
-      <button style={primaryButton}>{shift ? "근무 수정" : "근무 저장"}</button>
+      {isClosed && (
+        <label style={{ ...label, gridColumn: "1 / -1" }}>확정 월 수정 사유
+          <input name="editReason" required placeholder="이미 확정된 월입니다. 수정 사유를 입력해주세요." style={input} />
+        </label>
+      )}
+      {isClosed ? (
+        <WorkConfirmSubmit message="이미 확정된 월입니다. 사유를 남기고 수정할까요?" style={primaryButton}>
+          {shift ? "사유 남기고 수정" : "사유 남기고 저장"}
+        </WorkConfirmSubmit>
+      ) : (
+        <button style={primaryButton}>{shift ? "근무 수정" : "근무 저장"}</button>
+      )}
     </form>
   );
 }
 
-function Summary({ label, value, tone = "default" }: { label: string; value: string; tone?: "default" | "warn" | "money" }) {
+function Summary({ label, value, tone = "default" }: { label: string; value: string; tone?: "default" | "warn" | "money" | "success" }) {
   return (
-    <div style={{ ...summaryCard, ...(tone === "warn" ? warnCard : {}), ...(tone === "money" ? moneyCard : {}) }}>
+    <div style={{ ...summaryCard, ...(tone === "warn" ? warnCard : {}), ...(tone === "money" ? moneyCard : {}), ...(tone === "success" ? successCard : {}) }}>
       <span>{label}</span>
       <b>{value}</b>
     </div>
@@ -335,12 +599,66 @@ function Empty({ children }: { children: ReactNode }) {
   return <div style={empty}>{children}</div>;
 }
 
+function resolveSelectedAssistantId({
+  managerView,
+  requestedAssistantId,
+  assistants,
+  userId,
+}: {
+  managerView: boolean;
+  requestedAssistantId?: string;
+  assistants: AssistantOption[];
+  userId: string;
+}) {
+  if (!managerView) return userId;
+  if (!requestedAssistantId || requestedAssistantId === "all") return "all";
+  return assistants.some((assistant) => assistant.id === requestedAssistantId) ? requestedAssistantId : "all";
+}
+
+function filterShifts(
+  shifts: ShiftRow[],
+  filters: {
+    query: string;
+    status: ShiftStatusFilter;
+    from: string;
+    to: string;
+    confirmed: ConfirmedFilter;
+    settlements: PayrollSettlements;
+    month: string;
+  }
+) {
+  const query = filters.query.toLowerCase();
+  return shifts.filter((shift) => {
+    if (query && !shift.assistant.name.toLowerCase().includes(query)) return false;
+    if (filters.status !== "all" && shift.status !== filters.status) return false;
+    if (filters.from && shift.workDate < filters.from) return false;
+    if (filters.to && shift.workDate > filters.to) return false;
+    const confirmed = isPayrollClosed(filters.settlements[payrollSettlementKey(shift.assistantId, filters.month)]);
+    if (filters.confirmed === "confirmed" && !confirmed) return false;
+    if (filters.confirmed === "unconfirmed" && confirmed) return false;
+    return true;
+  });
+}
+
 function monthValue(value?: string) {
   return value && /^\d{4}-\d{2}$/.test(value) ? value : "";
 }
 
 function dateValue(value?: string) {
   return value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : "";
+}
+
+function boundedDate(value: string | undefined, start: string, end: string) {
+  const date = dateValue(value);
+  return date && date >= start && date <= end ? date : "";
+}
+
+function shiftStatusValue(value?: string): ShiftStatusFilter {
+  return shiftStatusOptions.some((option) => option.value === value) ? (value as ShiftStatusFilter) : "all";
+}
+
+function confirmedValue(value?: string): ConfirmedFilter {
+  return value === "confirmed" || value === "unconfirmed" ? value : "all";
 }
 
 function selectedDateValue(value: string | undefined, month: string) {
@@ -357,6 +675,17 @@ function monthRange(month: string) {
   const startDate = new Date(year, monthNumber - 1, 1);
   const endDate = new Date(year, monthNumber, 0);
   return { start: toYmd(startDate), end: toYmd(endDate) };
+}
+
+function monthNavigation(month: string) {
+  const [year, monthNumber] = month.split("-").map(Number);
+  const current = new Date(year, monthNumber - 1, 1);
+  const previous = new Date(current);
+  previous.setMonth(previous.getMonth() - 1);
+  return {
+    previous: toYm(previous),
+    previousDate: monthRange(toYm(previous)).start,
+  };
 }
 
 function calendarDays(month: string) {
@@ -380,7 +709,19 @@ function toYmd(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
-function workHref({ assistantId, month, date, shiftId, managerView }: { assistantId: string; month: string; date: string; shiftId?: string; managerView: boolean }) {
+function workHref({
+  assistantId,
+  month,
+  date,
+  shiftId,
+  managerView,
+}: {
+  assistantId: string;
+  month: string;
+  date: string;
+  shiftId?: string;
+  managerView: boolean;
+}) {
   const params = new URLSearchParams({ month, date });
   if (managerView) params.set("assistantId", assistantId);
   if (shiftId) params.set("shiftId", shiftId);
@@ -400,16 +741,20 @@ function groupShiftsByDate(shifts: ShiftRow[]) {
 function summarizeShifts(shifts: ShiftRow[]) {
   return shifts.reduce(
     (summary, shift) => {
+      summary.totalCount += 1;
+      if (shift.status === "SCHEDULED") summary.scheduledCount += 1;
       if (shift.status === "ABSENT" || shift.status === "CANCELLED") {
         summary.absentDays += 1;
-        return summary;
+      } else {
+        summary.workDays += 1;
+        summary.minutes += shiftMinutes(shift);
+        summary.pay += shiftPay(shift);
       }
-      summary.workDays += 1;
-      summary.minutes += shiftMinutes(shift);
-      summary.pay += shiftPay(shift);
+      if (isEditedShift(shift)) summary.revisionCount += 1;
+      if (shift.memo && /수정|요청|확인|조정/.test(shift.memo)) summary.requestCount += 1;
       return summary;
     },
-    { minutes: 0, pay: 0, workDays: 0, absentDays: 0 }
+    { minutes: 0, pay: 0, workDays: 0, absentDays: 0, scheduledCount: 0, revisionCount: 0, requestCount: 0, totalCount: 0 }
   );
 }
 
@@ -430,6 +775,57 @@ function minutesFromTime(value: string) {
   return (Number.isFinite(hour) ? hour : 0) * 60 + (Number.isFinite(minute) ? minute : 0);
 }
 
+function isEditedShift(shift: Pick<AssistantWorkShift, "createdAt" | "updatedAt">) {
+  return new Date(shift.updatedAt).getTime() - new Date(shift.createdAt).getTime() > 60_000;
+}
+
+function payrollScopeStatus(assistantId: string, shifts: ShiftRow[], settlements: PayrollSettlements, month: string) {
+  if (assistantId !== "all") return payrollStatusText(settlements[payrollSettlementKey(assistantId, month)]);
+  const assistantIds = [...new Set(shifts.map((shift) => shift.assistantId))];
+  if (assistantIds.length === 0) return "정산 대상 없음";
+  const paid = assistantIds.filter((id) => settlements[payrollSettlementKey(id, month)]?.status === "PAID").length;
+  const closed = assistantIds.filter((id) => isPayrollClosed(settlements[payrollSettlementKey(id, month)])).length;
+  if (paid === assistantIds.length) return "전체 지급 완료";
+  if (closed === assistantIds.length) return "전체 확정됨";
+  return `확정 ${closed}/${assistantIds.length}명 · 지급 ${paid}/${assistantIds.length}명`;
+}
+
+function payrollStatusText(settlement?: PayrollSettlementRecord) {
+  if (settlement?.status === "PAID") return "지급 완료";
+  if (settlement?.status === "FINALIZED") return "확정됨";
+  return "미확정";
+}
+
+function shiftStatusText(status: string) {
+  if (status === "WORKED") return "근무 완료";
+  if (status === "ABSENT") return "결근";
+  if (status === "CANCELLED") return "취소";
+  return "예정";
+}
+
+function monthTitleText(month: string) {
+  const [year, monthNumber] = month.split("-").map(Number);
+  return `${year}년 ${monthNumber}월`;
+}
+
+function longDateText(date: string) {
+  const [year, month, day] = date.split("-").map(Number);
+  return new Intl.DateTimeFormat("ko-KR", { year: "numeric", month: "long", day: "numeric", weekday: "long" }).format(new Date(year, month - 1, day));
+}
+
+function dateText(date: string) {
+  const [, month, day] = date.split("-");
+  return `${Number(month)}월 ${Number(day)}일`;
+}
+
+function formatDateTime(value: string) {
+  return new Intl.DateTimeFormat("ko-KR", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
+}
+
+function formatWon(value: number) {
+  return new Intl.NumberFormat("ko-KR").format(value);
+}
+
 function formatHours(minutes: number) {
   const hours = Math.floor(minutes / 60);
   const rest = minutes % 60;
@@ -444,31 +840,17 @@ function formatHoursShort(minutes: number) {
   return `${rest}m`;
 }
 
-function shiftChipText(shift: Pick<AssistantWorkShift, "startTime" | "endTime" | "breakMinutes" | "status">) {
-  if (shift.status === "ABSENT") return "못 나옴";
-  if (shift.status === "CANCELLED") return "취소";
-  return formatHours(shiftMinutes(shift));
-}
-
-function monthTitleText(month: string) {
-  const [year, monthNumber] = month.split("-").map(Number);
-  return `${year}년 ${monthNumber}월`;
-}
-
-function longDateText(date: string) {
-  const [year, month, day] = date.split("-").map(Number);
-  return new Intl.DateTimeFormat("ko-KR", { year: "numeric", month: "long", day: "numeric", weekday: "long" }).format(new Date(year, month - 1, day));
-}
-
-function formatWon(value: number) {
-  return new Intl.NumberFormat("ko-KR").format(value);
-}
-
 function statusBadge(status: string): CSSProperties {
   if (status === "WORKED") return successBadge;
   if (status === "ABSENT") return dangerBadge;
   if (status === "CANCELLED") return mutedBadge;
   return infoBadge;
+}
+
+function payrollBadgeStyle(settlement?: PayrollSettlementRecord): CSSProperties {
+  if (settlement?.status === "PAID") return successBadge;
+  if (settlement?.status === "FINALIZED") return closeBadge;
+  return warnBadge;
 }
 
 function shiftChipStyle(status: string): CSSProperties {
@@ -479,10 +861,11 @@ function shiftChipStyle(status: string): CSSProperties {
 
 const page: CSSProperties = { padding: 14, color: "#111827", background: "#f3f4f6", minHeight: "100vh" };
 const container: CSSProperties = { width: "100%", maxWidth: "none", margin: 0, display: "grid", gap: 12 };
-const header: CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 16, background: "#fff", border: "1px solid #d1d5db", borderRadius: 8, padding: 16 };
+const header: CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 16, background: "#fff", border: "1px solid #d1d5db", borderRadius: 8, padding: 16, flexWrap: "wrap" };
 const eyebrow: CSSProperties = { margin: "0 0 4px", color: "#2563eb", fontWeight: 950, fontSize: 12 };
 const title: CSSProperties = { margin: 0, fontSize: 25, fontWeight: 950 };
 const desc: CSSProperties = { margin: "6px 0 0", color: "#6b7280", fontSize: 14 };
+const monthTools: CSSProperties = { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" };
 const monthForm: CSSProperties = { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" };
 const layout = (managerView: boolean): CSSProperties => ({ display: "grid", gridTemplateColumns: managerView ? "260px minmax(0, 1fr)" : "1fr", gap: 12, alignItems: "start" });
 const assistantPanel: CSSProperties = { background: "#fff", border: "1px solid #d1d5db", borderRadius: 8, padding: 12, position: "sticky", top: 12 };
@@ -490,14 +873,31 @@ const assistantList: CSSProperties = { display: "grid", gap: 7 };
 const assistantLink: CSSProperties = { display: "grid", gap: 3, border: "1px solid #e5e7eb", borderRadius: 7, padding: 10, color: "#111827", textDecoration: "none", background: "#fff" };
 const activeAssistantLink: CSSProperties = { ...assistantLink, border: "1px solid #2563eb", background: "#eff6ff" };
 const mainColumn: CSSProperties = { display: "grid", gap: 12, minWidth: 0 };
-const salaryCalendarPanel: CSSProperties = { background: "#fff", border: "1px solid #d1d5db", borderRadius: 8, padding: 14, display: "grid", gap: 12 };
+const settlementPanel: CSSProperties = { background: "#fff", border: "1px solid #d1d5db", borderRadius: 8, padding: 14, display: "grid", gap: 12 };
+const tablePanel: CSSProperties = { background: "#fff", border: "1px solid #d1d5db", borderRadius: 8, padding: 14, display: "grid", gap: 12 };
+const calendarPanel: CSSProperties = { background: "#fff", border: "1px solid #d1d5db", borderRadius: 8, padding: 14, display: "grid", gap: 12 };
 const salaryTop: CSSProperties = { display: "flex", justifyContent: "space-between", gap: 16, alignItems: "end", flexWrap: "wrap" };
 const monthTitle: CSSProperties = { margin: "6px 0 0", fontSize: 25, fontWeight: 950 };
 const payTotalBox: CSSProperties = { display: "grid", justifyItems: "end", gap: 4 };
-const summaryGrid: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 8 };
+const summaryGrid: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 8 };
 const summaryCard: CSSProperties = { border: "1px solid #e5e7eb", borderRadius: 8, padding: 11, display: "grid", gap: 5, background: "#fff" };
 const moneyCard: CSSProperties = { border: "1px solid #bbf7d0", background: "#f0fdf4" };
 const warnCard: CSSProperties = { border: "1px solid #fed7aa", background: "#fff7ed" };
+const successCard: CSSProperties = { border: "1px solid #bbf7d0", background: "#ecfdf5" };
+const settlementNotice: CSSProperties = { margin: 0, border: "1px solid #e5e7eb", borderRadius: 8, padding: 10, background: "#f8fafc", color: "#475569", fontSize: 13, fontWeight: 800 };
+const settlementActionBox: CSSProperties = { border: "1px solid #e5e7eb", borderRadius: 8, padding: 10, background: "#f8fafc", display: "grid", gap: 9 };
+const settlementButtons: CSSProperties = { display: "flex", gap: 8, flexWrap: "wrap" };
+const sectionHead: CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" };
+const filterBar: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, auto))", gap: 8, alignItems: "center" };
+const tableWrap: CSSProperties = { overflow: "auto", border: "1px solid #e5e7eb", borderRadius: 8 };
+const workTable: CSSProperties = { width: "100%", minWidth: 980, borderCollapse: "collapse", fontSize: 13 };
+const th: CSSProperties = { position: "sticky", top: 0, padding: "9px 10px", borderBottom: "1px solid #d1d5db", background: "#f8fafc", textAlign: "left", color: "#475569", fontSize: 12, fontWeight: 950, whiteSpace: "nowrap" };
+const td: CSSProperties = { padding: "9px 10px", borderBottom: "1px solid #eef2f7", verticalAlign: "middle", whiteSpace: "nowrap" };
+const emptyTd: CSSProperties = { ...td, textAlign: "center", color: "#64748b", padding: 24 };
+const tableLink: CSSProperties = { color: "#2563eb", fontWeight: 900, textDecoration: "none" };
+const memoCell: CSSProperties = { maxWidth: 260, whiteSpace: "normal", lineHeight: 1.45 };
+const mutedText: CSSProperties = { color: "#94a3b8", fontWeight: 800 };
+const warnPill: CSSProperties = { display: "inline-flex", borderRadius: 999, padding: "3px 7px", background: "#fff7ed", color: "#b45309", fontSize: 12, fontWeight: 900 };
 const calendarWrap: CSSProperties = { display: "grid", gap: 0, border: "1px solid #d1d5db", borderRadius: 8, overflow: "hidden" };
 const weekdayRow: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(7, minmax(74px, 1fr))", background: "#f8fafc", borderBottom: "1px solid #d1d5db", textAlign: "center", fontWeight: 950, color: "#6b7280", fontSize: 12 };
 const calendarGrid: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(7, minmax(74px, 1fr))" };
@@ -514,7 +914,7 @@ const moreChip: CSSProperties = { color: "#6b7280", fontSize: 13, fontWeight: 95
 const dayPayText: CSSProperties = { color: "#6b7280", textAlign: "right", fontSize: 12, fontWeight: 950 };
 const sundayText: CSSProperties = { color: "#ef4444" };
 const saturdayText: CSSProperties = { color: "#38bdf8" };
-const workBoard: CSSProperties = { display: "grid", gridTemplateColumns: "minmax(0, 2fr) minmax(280px, 1fr)", gap: 12, alignItems: "start" };
+const workBoard: CSSProperties = { display: "grid", gridTemplateColumns: "minmax(0, 2fr) minmax(320px, 1fr)", gap: 12, alignItems: "start" };
 const calendarPane: CSSProperties = { minWidth: 0 };
 const sideWorkPane: CSSProperties = { border: "1px solid #e5e7eb", borderRadius: 8, padding: 12, background: "#fbfcfe", display: "grid", gap: 12, alignContent: "start" };
 const panelHead: CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, marginBottom: 10 };
@@ -526,7 +926,6 @@ const assistantMemoForm: CSSProperties = { display: "grid", gap: 8 };
 const memoTextarea: CSSProperties = { width: "100%", resize: "vertical", minHeight: 92, border: "1px solid #93c5fd", borderRadius: 8, padding: 9, background: "#fff", color: "#111827", lineHeight: 1.5 };
 const memoActionRow: CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" };
 const memoMeta: CSSProperties = { color: "#64748b", fontSize: 12, fontWeight: 800 };
-const smallPrimaryButton: CSSProperties = { height: 32, border: "1px solid #1d4ed8", borderRadius: 7, background: "#1d4ed8", color: "#fff", padding: "0 10px", fontSize: 12, fontWeight: 950 };
 const dayShiftList: CSSProperties = { display: "grid", gap: 8, marginTop: 12 };
 const dayShiftItem: CSSProperties = { border: "1px solid #e5e7eb", borderRadius: 8, padding: 8, background: "#fff", display: "grid", gap: 7 };
 const dayShiftSummary: CSSProperties = { display: "grid", gridTemplateColumns: "auto 1fr auto", gap: 8, alignItems: "center" };
@@ -535,14 +934,20 @@ const detailPane: CSSProperties = { display: "grid", gap: 10, border: "1px solid
 const detailTitleRow: CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 };
 const detailButton: CSSProperties = { height: 30, display: "inline-grid", placeItems: "center", border: "1px solid #d1d5db", borderRadius: 7, background: "#fff", color: "#111827", textDecoration: "none", fontSize: 12, fontWeight: 950 };
 const shiftForm: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10, alignItems: "end" };
+const closedEditBox: CSSProperties = { display: "grid", gap: 8 };
 const label: CSSProperties = { display: "grid", gap: 6, fontSize: 13, fontWeight: 900 };
-const input: CSSProperties = { width: "100%", height: 36, border: "1px solid #d1d5db", borderRadius: 8, padding: "0 9px", background: "#fff", color: "#111827" };
+const input: CSSProperties = { width: "100%", height: 36, border: "1px solid #d1d5db", borderRadius: 8, padding: "0 9px", background: "#fff", color: "#111827", boxSizing: "border-box" };
 const primaryButton: CSSProperties = { height: 36, border: "1px solid #111827", borderRadius: 8, background: "#111827", color: "#fff", padding: "0 12px", fontWeight: 950 };
+const smallPrimaryButton: CSSProperties = { height: 36, border: "1px solid #1d4ed8", borderRadius: 7, background: "#1d4ed8", color: "#fff", padding: "0 10px", fontSize: 12, fontWeight: 950 };
 const smallGhost: CSSProperties = { ...primaryButton, background: "#fff", color: "#111827", border: "1px solid #d1d5db" };
+const smallGhostLink: CSSProperties = { height: 36, display: "inline-flex", alignItems: "center", justifyContent: "center", border: "1px solid #d1d5db", borderRadius: 8, background: "#fff", color: "#111827", padding: "0 10px", textDecoration: "none", fontSize: 12, fontWeight: 950, whiteSpace: "nowrap" };
 const dangerButton: CSSProperties = { ...primaryButton, background: "#dc2626", border: "1px solid #dc2626" };
-const badge: CSSProperties = { display: "inline-flex", alignItems: "center", height: 24, borderRadius: 999, background: "#f1f5f9", color: "#475569", padding: "0 8px", fontSize: 12, fontWeight: 950 };
+const successButton: CSSProperties = { ...primaryButton, background: "#16a34a", border: "1px solid #16a34a" };
+const badge: CSSProperties = { display: "inline-flex", alignItems: "center", height: 24, borderRadius: 999, background: "#f1f5f9", color: "#475569", padding: "0 8px", fontSize: 12, fontWeight: 950, whiteSpace: "nowrap" };
 const infoBadge: CSSProperties = { ...badge, background: "#dbeafe", color: "#1d4ed8" };
 const successBadge: CSSProperties = { ...badge, background: "#dcfce7", color: "#166534" };
 const dangerBadge: CSSProperties = { ...badge, background: "#fee2e2", color: "#991b1b" };
+const warnBadge: CSSProperties = { ...badge, background: "#fef3c7", color: "#92400e" };
+const closeBadge: CSSProperties = { ...badge, background: "#e0e7ff", color: "#3730a3" };
 const mutedBadge: CSSProperties = { ...badge, background: "#f3f4f6", color: "#6b7280" };
 const empty: CSSProperties = { border: "1px dashed #d1d5db", borderRadius: 8, padding: 18, textAlign: "center", color: "#6b7280", fontWeight: 900 };

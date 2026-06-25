@@ -2,20 +2,22 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 
 const menus = [
-  { name: "\uB300\uC2DC\uBCF4\uB4DC", href: "/dashboard", icon: "D" },
-  { name: "\uD559\uC0DD \uD604\uD669\uD310", href: "/students", icon: "S" },
-  { name: "\uBC18 \uAD00\uB9AC", href: "/classes", icon: "C" },
-  { name: "\uCE98\uB9B0\uB354", href: "/calendar", icon: "K" },
-  { name: "\uBA54\uBAA8 \uAD00\uB9AC", href: "/memos", icon: "M" },
-  { name: "\uC5C5\uBB34 \uAD00\uB9AC", href: "/tasks", icon: "T" },
-  { name: "\uADFC\uBB34/\uAE09\uC5EC", href: "/work", icon: "W" },
-  { name: "OMR \uAC80\uC0AC", href: "/omr", icon: "O" },
-  { name: "\uC6B4\uC601 \uC548\uC815\uD654", href: "/operations", icon: "B" },
-  { name: "\uC9C1\uC6D0/\uACC4\uC815", href: "/users", icon: "U" },
-];
+  { name: "\uB300\uC2DC\uBCF4\uB4DC", href: "/dashboard", icon: "dashboard" },
+  { name: "\uD559\uC0DD \uD604\uD669\uD310", href: "/students", icon: "students" },
+  { name: "\uBC18 \uAD00\uB9AC", href: "/classes", icon: "classes" },
+  { name: "\uCE98\uB9B0\uB354", href: "/calendar", icon: "calendar" },
+  { name: "\uBA54\uBAA8 \uAD00\uB9AC", href: "/memos", icon: "memos" },
+  { name: "\uC5C5\uBB34 \uAD00\uB9AC", href: "/tasks", icon: "tasks" },
+  { name: "\uADFC\uBB34/\uAE09\uC5EC", href: "/work", icon: "work" },
+  { name: "OMR \uAC80\uC0AC", href: "/omr", icon: "omr" },
+  { name: "\uC6B4\uC601 \uC548\uC815\uD654", href: "/operations", icon: "operations" },
+  { name: "\uC9C1\uC6D0/\uACC4\uC815", href: "/users", icon: "users" },
+] as const;
+
+type MenuIconName = (typeof menus)[number]["icon"] | "logout";
 
 type SidebarProps = {
   academyName?: string;
@@ -59,11 +61,12 @@ export default function Sidebar({ academyName, userName, role, collapsed = false
               href={menu.href}
               className="sidebar-link"
               title={collapsed ? menu.name : undefined}
+              aria-label={menu.name}
               onMouseDown={(event) => event.currentTarget.blur()}
               onClick={(event) => event.currentTarget.blur()}
               style={{ ...menuStyle, ...(collapsed ? menuCollapsedStyle : {}), ...(active ? activeStyle : {}) }}
             >
-              <span style={{ ...iconStyle, ...(active ? activeIconStyle : {}) }}>{menu.icon}</span>
+              <span style={{ ...iconStyle, ...(active ? activeIconStyle : {}) }}>{renderMenuIcon(menu.icon)}</span>
               {!collapsed && <span style={menuTextStyle}>{menu.name}</span>}
             </Link>
           );
@@ -83,12 +86,109 @@ export default function Sidebar({ academyName, userName, role, collapsed = false
           onMouseDown={(event) => event.currentTarget.blur()}
           onClick={(event) => event.currentTarget.blur()}
           style={collapsed ? logoutCollapsedStyle : logoutStyle}
-          title={collapsed ? "\uB85C\uADF8\uC544\uC6C3" : undefined}
+          title={collapsed ? "로그아웃" : undefined}
+          aria-label="로그아웃"
         >
-          {collapsed ? "X" : "\uB85C\uADF8\uC544\uC6C3"}
+          <span style={logoutIconStyle}>{renderMenuIcon("logout")}</span>
+          {!collapsed && <span>로그아웃</span>}
         </Link>
       </div>
     </aside>
+  );
+}
+
+function renderMenuIcon(icon: MenuIconName) {
+  const icons: Record<MenuIconName, ReactNode> = {
+    dashboard: (
+      <>
+        <rect x="3" y="3" width="7" height="7" rx="1.5" />
+        <rect x="14" y="3" width="7" height="7" rx="1.5" />
+        <rect x="3" y="14" width="7" height="7" rx="1.5" />
+        <rect x="14" y="14" width="7" height="7" rx="1.5" />
+      </>
+    ),
+    students: (
+      <>
+        <path d="M16 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2" />
+        <circle cx="9.5" cy="7" r="4" />
+        <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+      </>
+    ),
+    classes: (
+      <>
+        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+        <path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5z" />
+        <path d="M8 6h8" />
+      </>
+    ),
+    calendar: (
+      <>
+        <path d="M8 2v4" />
+        <path d="M16 2v4" />
+        <rect x="3" y="4" width="18" height="18" rx="2" />
+        <path d="M3 10h18" />
+        <path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01" />
+      </>
+    ),
+    memos: (
+      <>
+        <path d="M16 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8z" />
+        <path d="M16 3v5h5" />
+        <path d="M7 13h10" />
+        <path d="M7 17h7" />
+      </>
+    ),
+    tasks: (
+      <>
+        <path d="M9 11l2 2 4-4" />
+        <path d="M9 17l2 2 4-4" />
+        <path d="M4 5h16" />
+        <path d="M4 11h2" />
+        <path d="M4 17h2" />
+      </>
+    ),
+    work: (
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 7v5l3 2" />
+      </>
+    ),
+    omr: (
+      <>
+        <path d="M9 11l2 2 4-4" />
+        <rect x="4" y="3" width="16" height="18" rx="2" />
+        <path d="M8 17h8" />
+        <path d="M8 7h3" />
+      </>
+    ),
+    operations: (
+      <>
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+        <path d="M9 12l2 2 4-4" />
+      </>
+    ),
+    users: (
+      <>
+        <circle cx="12" cy="8" r="4" />
+        <path d="M4 21a8 8 0 0 1 16 0" />
+        <path d="M19 8h3" />
+        <path d="M20.5 6.5v3" />
+      </>
+    ),
+    logout: (
+      <>
+        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+        <path d="M16 17l5-5-5-5" />
+        <path d="M21 12H9" />
+      </>
+    ),
+  };
+
+  return (
+    <svg viewBox="0 0 24 24" style={svgIconStyle} aria-hidden="true" focusable="false">
+      {icons[icon]}
+    </svg>
   );
 }
 
@@ -158,14 +258,23 @@ const iconStyle: CSSProperties = {
   placeItems: "center",
   background: "rgba(255,255,255,.08)",
   color: "#cbd5e1",
-  fontSize: 12,
-  fontWeight: 950,
   flex: "0 0 auto",
 };
 const activeIconStyle: CSSProperties = { background: "rgba(255,255,255,.18)", color: "#fff" };
+const svgIconStyle: CSSProperties = {
+  width: 18,
+  height: 18,
+  display: "block",
+  fill: "none",
+  stroke: "currentColor",
+  strokeWidth: 2,
+  strokeLinecap: "round",
+  strokeLinejoin: "round",
+};
 const menuTextStyle: CSSProperties = { whiteSpace: "nowrap" };
 const bottomStyle: CSSProperties = { marginTop: "auto", padding: "12px 6px" };
 const bottomCollapsedStyle: CSSProperties = { marginTop: "auto", padding: "8px 0", display: "grid", placeItems: "center" };
 const userStyle: CSSProperties = { display: "flex", flexDirection: "column", gap: 4, color: "#d1d5db", fontSize: 13, padding: "0 6px 10px" };
-const logoutStyle: CSSProperties = { display: "block", color: "#fecaca", textDecoration: "none", fontWeight: 900, padding: "9px 6px", outline: "none", boxShadow: "none" };
-const logoutCollapsedStyle: CSSProperties = { ...logoutStyle, width: 32, textAlign: "center", padding: 7, borderRadius: 8, background: "rgba(255,255,255,.06)" };
+const logoutStyle: CSSProperties = { display: "flex", alignItems: "center", gap: 10, color: "#fecaca", textDecoration: "none", fontWeight: 900, padding: "9px 6px", outline: "none", boxShadow: "none" };
+const logoutIconStyle: CSSProperties = { ...iconStyle, background: "rgba(254,202,202,.1)", color: "#fecaca" };
+const logoutCollapsedStyle: CSSProperties = { ...logoutStyle, width: 32, justifyContent: "center", padding: 7, borderRadius: 8, background: "rgba(255,255,255,.06)" };

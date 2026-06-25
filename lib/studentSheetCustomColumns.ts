@@ -2,6 +2,7 @@ export type SheetCustomColumn = {
   id: string;
   label: string;
   enabled: boolean;
+  afterColumnId?: string | null;
 };
 
 export type SheetCustomCellValues = Record<string, Record<string, string>>;
@@ -31,6 +32,7 @@ export function normalizeCustomColumns(value: unknown): SheetCustomColumn[] {
       id,
       label,
       enabled: raw.enabled !== false,
+      afterColumnId: normalizeColumnAnchor(raw.afterColumnId),
     });
   }
 
@@ -61,6 +63,12 @@ export function normalizeCustomCellValues(value: unknown): SheetCustomCellValues
 export function normalizeCustomColumnId(value: unknown) {
   const id = String(value ?? "").trim();
   return /^[A-Za-z0-9_-]{1,64}$/.test(id) ? id : "";
+}
+
+function normalizeColumnAnchor(value: unknown) {
+  if (value === null || value === undefined || value === "") return null;
+  const id = String(value).trim();
+  return /^[A-Za-z0-9_-]{1,80}$/.test(id) ? id : null;
 }
 
 function isSafeKey(value: string) {

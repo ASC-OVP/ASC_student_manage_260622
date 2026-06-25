@@ -91,7 +91,7 @@ type ExamUploadLite = {
   createdAt: Date;
   student: StudentBrief | null;
   recognizedAnswers: Array<{ status: OmrAnswerStatus }>;
-  results: ResultSummary[];
+  results: ResultWithItems[];
 };
 type ExamWithUploads = {
   id: string;
@@ -140,7 +140,7 @@ export default async function OmrPage({ searchParams }: Props) {
           include: {
             student: { select: { id: true, name: true, schoolName: true, grade: true } },
             recognizedAnswers: { select: { status: true } },
-            results: { orderBy: { createdAt: "desc" }, take: 1 },
+            results: { orderBy: { createdAt: "desc" }, take: 1, include: { items: { orderBy: { questionNo: "asc" } } } },
           },
           orderBy: { createdAt: "desc" },
         },
@@ -209,6 +209,15 @@ export default async function OmrPage({ searchParams }: Props) {
         </header>
 
         {uploadNotice && <div style={uploadNotice.tone === "error" ? errorNotice : warningNotice}>{uploadNotice.message}</div>}
+
+        <OmrWorkflow
+          exam={selectedExam}
+          record={selectedRecord}
+          selectedMode={selectedMode}
+          showNewSheet={showNewSheet}
+          uploadNotice={uploadNotice}
+          canManageExam={canManageExam}
+        />
 
         <form style={filterBar}>
           <input name="q" defaultValue={q} placeholder="검사명 또는 과목 검색" style={filterInput} />
@@ -409,6 +418,346 @@ export default async function OmrPage({ searchParams }: Props) {
       )}
     </main>
   );
+}
+
+function OmrWorkflow({
+  exam,
+  record,
+  selectedMode,
+  showNewSheet,
+  uploadNotice,
+  canManageExam,
+}: {
+  exam: ExamWithUploads | null;
+  record: ExamRecord | null;
+  selectedMode: string;
+  showNewSheet: boolean;
+  uploadNotice: ReturnType<typeof uploadNoticeMessage>;
+  canManageExam: boolean;
+}) {
+  const workflow = getWorkflowState(exam, record, selectedMode, showNewSheet);
+  const insights = exam ? buildResultInsights(exam) : null;
+  const template = exam ? getOmrTemplate(exam.templateType) : null;
+  const answerCount = exam?.answerKeys.length ?? 0;
+  const uploads = exam?.uploads ?? [];
+  const hasAnswers = answerCount > 0;
+  const canRecognizeAll = uploads.length > 0;
+  const canGradeAll = Boolean(exam && uploads.length > 0 && hasAnswers);
+  const gradeableCount = uploads.filter((upload) =>
+    upload.studentId &&
+    (upload.recognizeStatus === "RECOGNIZED" || upload.recognizeStatus === "REVIEW_NEEDED" || upload.results.length > 0)
+  ).length;
+
+  return (
+    <section style={workflowPanel}>
+      <WorkflowStepper activeStep={workflow.currentStep} completedSteps={workflow.completedSteps} />
+
+      {exam && record ? (
+        <SelectedExamSummary exam={exam} record={record} insights={insights} />
+      ) : (
+        <div style={workflowEmptyState}>
+          <div>
+            <h2 style={sectionTitle}>시험을 먼저 선택하세요</h2>
+            <p style={muted}>아래 검사 목록에서 시험을 선택하거나 새 OMR 검사를 만든 뒤 정답, 업로드, 채점 순서로 진행합니다.</p>
+          </div>
+          <Link href="/omr?new=1" style={smallButton}>+ OMR 검사</Link>
+        </div>
+      )}
+
+      <div style={workflowGrid}>
+        <WorkflowStageCard
+          stepNo={1}
+          title="시험/반 선택"
+          active={workflow.currentStep === 1}
+          complete={workflow.completedSteps.has(1)}
+        >
+          {exam && record ? (
+            <>
+              <p style={stageMainText}>{exam.title}</p>
+              <p style={muted}>
+                {record.classGroupName || "반 미지정"} / {exam.subject || template?.subject || "-"} / {exam.examDate ? formatDate(exam.examDate) : "날짜 미지정"}
+              </p>
+            </>
+          ) : (
+            <p style={muted}>검사 목록에서 시험을 누르면 선택한 시험 기준으로 다음 단계가 열립니다.</p>
+          )}
+        </WorkflowStageCard>
+
+        <WorkflowStageCard
+          stepNo={2}
+          title="정답 확인"
+          active={workflow.currentStep === 2}
+          complete={workflow.completedSteps.has(2)}
+        >
+          {exam ? (
+            <>
+              <p style={stageMainText}>정답 {answerCount}/{exam.questionCount}문항</p>
+              <p style={hasAnswers ? muted : warningText}>
+                {hasAnswers ? "저장된 기준 답안으로 자동 채점할 수 있습니다." : "정답이 없으면 채점할 수 없습니다. 먼저 기준 답안을 저장하세요."}
+              </p>
+              <Link href={`/omr?examId=${exam.id}&mode=answers`} style={resultButton}>정답 입력/수정</Link>
+            </>
+          ) : (
+            <p style={muted}>시험 선택 후 정답 입력 단계가 활성화됩니다.</p>
+          )}
+        </WorkflowStageCard>
+
+        <WorkflowStageCard
+          stepNo={3}
+          title="답안 업로드"
+          active={workflow.currentStep === 3}
+          complete={workflow.completedSteps.has(3)}
+        >
+          {exam ? (
+            <>
+              <p style={stageMainText}>업로드 {uploads.length}개</p>
+              <p style={muted}>파일 업로드 후 전화번호 뒤 8자리 인식과 학생 자동 매칭을 시도합니다.</p>
+              {uploadNotice && (
+                <p style={uploadNotice.tone === "error" ? dangerText : warningText}>{uploadNotice.message}</p>
+              )}
+              <Link href={`/omr?examId=${exam.id}&mode=upload`} style={resultButton}>PDF/이미지 업로드</Link>
+            </>
+          ) : (
+            <p style={muted}>시험 선택 후 여러 OMR 파일을 한 번에 업로드할 수 있습니다.</p>
+          )}
+        </WorkflowStageCard>
+
+        <WorkflowStageCard
+          stepNo={4}
+          title="자동 채점 실행"
+          active={workflow.currentStep === 4}
+          complete={workflow.completedSteps.has(4)}
+        >
+          {exam ? (
+            <>
+              <p style={stageMainText}>처리 가능 {gradeableCount}/{uploads.length}건</p>
+              <p style={!canGradeAll ? warningText : muted}>
+                {!hasAnswers
+                  ? "정답 저장이 필요합니다."
+                  : uploads.length === 0
+                    ? "채점할 업로드 파일이 없습니다."
+                    : "전체 인식 또는 전체 채점을 한 번에 실행할 수 있습니다."}
+              </p>
+              <div style={workflowActionRow}>
+                <form action={recognizeSelectedOmrUploadsAction} style={inlineForm}>
+                  <input type="hidden" name="examId" value={exam.id} />
+                  <input type="hidden" name="scope" value="all" />
+                  <button style={secondaryButton} disabled={!canRecognizeAll}>전체 인식</button>
+                </form>
+                <form action={gradeSelectedOmrUploadsAction} style={inlineForm}>
+                  <input type="hidden" name="examId" value={exam.id} />
+                  <input type="hidden" name="scope" value="all" />
+                  <button style={smallButton} disabled={!canManageExam || !canGradeAll}>전체 채점/등록</button>
+                </form>
+              </div>
+            </>
+          ) : (
+            <p style={muted}>시험, 정답, 업로드가 준비되면 자동 채점을 실행합니다.</p>
+          )}
+        </WorkflowStageCard>
+
+        <WorkflowStageCard
+          stepNo={5}
+          title="결과 확인"
+          active={workflow.currentStep === 5}
+          complete={workflow.completedSteps.has(5)}
+        >
+          {exam && record && insights ? (
+            <>
+              <div style={resultMetricGrid}>
+                <MiniStat label="반 평균" value={formatScoreMetric(insights.averageScore)} />
+                <MiniStat label="최고/최저" value={`${formatScoreMetric(insights.highScore)} / ${formatScoreMetric(insights.lowScore)}`} />
+                <MiniStat label="보충 필요" value={`${insights.remedialStudents.length}명`} />
+              </div>
+              {insights.topWrongQuestions.length > 0 ? (
+                <div style={wrongQuestionList}>
+                  {insights.topWrongQuestions.map((question) => (
+                    <span key={question.questionNo} style={wrongQuestionPill}>
+                      {question.questionNo}번 {formatPercent(question.rate)}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p style={muted}>채점된 문항이 있으면 오답률 높은 문항이 표시됩니다.</p>
+              )}
+              {insights.remedialStudents.length > 0 && (
+                <div style={remedialList}>
+                  {insights.remedialStudents.slice(0, 4).map((student) => (
+                    <span key={student.id} style={remedialPill}>
+                      {student.name} {formatScoreMetric(student.score)}
+                    </span>
+                  ))}
+                  {insights.remedialStudents.length > 4 && (
+                    <span style={remedialPill}>외 {insights.remedialStudents.length - 4}명</span>
+                  )}
+                </div>
+              )}
+              <Link href={`/omr?examId=${exam.id}&mode=results`} style={resultButton}>학생별 결과 보기</Link>
+            </>
+          ) : (
+            <p style={muted}>채점 가능한 데이터가 아직 없습니다. 앞 단계를 완료하면 결과 요약이 표시됩니다.</p>
+          )}
+        </WorkflowStageCard>
+      </div>
+    </section>
+  );
+}
+
+function WorkflowStepper({ activeStep, completedSteps }: { activeStep: number; completedSteps: Set<number> }) {
+  return (
+    <div style={stepper}>
+      {workflowSteps.map((step) => {
+        const isActive = activeStep === step.no;
+        const isComplete = completedSteps.has(step.no);
+        return (
+          <div key={step.no} style={{ ...stepItem, ...(isActive ? stepItemActive : {}), ...(isComplete ? stepItemComplete : {}) }}>
+            <span style={{ ...stepNoPill, ...(isActive ? stepNoActive : {}), ...(isComplete ? stepNoComplete : {}) }}>{step.no}</span>
+            <span style={stepLabel}>{step.label}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function WorkflowStageCard({
+  stepNo,
+  title,
+  active,
+  complete,
+  children,
+}: {
+  stepNo: number;
+  title: string;
+  active: boolean;
+  complete: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <section style={{ ...stageCard, ...(active ? stageCardActive : {}), ...(complete ? stageCardComplete : {}) }}>
+      <div style={stageHeader}>
+        <span style={stageNo}>{stepNo}단계</span>
+        <StatusBadge tone={complete ? "green" : active ? "blue" : "gray"}>{complete ? "완료" : active ? "진행 중" : "대기"}</StatusBadge>
+      </div>
+      <h3 style={stageTitle}>{title}</h3>
+      <div style={stageBody}>{children}</div>
+    </section>
+  );
+}
+
+function SelectedExamSummary({ exam, record, insights }: { exam: ExamWithUploads; record: ExamRecord; insights: OmrResultInsights | null }) {
+  const template = getOmrTemplate(exam.templateType);
+
+  return (
+    <section style={summaryCard}>
+      <div>
+        <p style={eyebrow}>선택된 검사</p>
+        <h2 style={summaryTitle}>{exam.title}</h2>
+        <p style={muted}>
+          {record.classGroupName || "반 미지정"} / {exam.subject || template.subject} / {exam.examDate ? formatDate(exam.examDate) : "날짜 미지정"}
+        </p>
+      </div>
+      <div style={summaryMetaGrid}>
+        <SummaryItem label="템플릿" value={template.label} />
+        <SummaryItem label="문항/정답" value={`${exam.questionCount}문항 / ${exam.answerKeys.length}개`} />
+        <SummaryItem label="업로드" value={`${record.totalFiles}개`} />
+        <SummaryItem label="매칭/인식" value={`${record.matchedCount}/${record.totalFiles} / ${record.recognizedCount}/${record.totalFiles}`} />
+        <SummaryItem label="채점/등록" value={`${record.gradedCount}/${record.totalFiles} / ${record.registeredCount}`} />
+        <SummaryItem label="결과" value={insights?.gradedCount ? `평균 ${formatScoreMetric(insights.averageScore)}` : "대기"} />
+      </div>
+    </section>
+  );
+}
+
+function SummaryItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={summaryItem}>
+      <span>{label}</span>
+      <b>{value}</b>
+    </div>
+  );
+}
+
+const workflowSteps = [
+  { no: 1, label: "시험/반 선택" },
+  { no: 2, label: "정답 확인" },
+  { no: 3, label: "답안 업로드" },
+  { no: 4, label: "자동 채점" },
+  { no: 5, label: "결과 확인" },
+] as const;
+
+type OmrResultInsights = {
+  gradedCount: number;
+  averageScore: number | null;
+  highScore: number | null;
+  lowScore: number | null;
+  remedialStudents: Array<{ id: string; name: string; score: number; percent: number | null; reviewNeededCount: number }>;
+  topWrongQuestions: Array<{ questionNo: number; total: number; wrong: number; rate: number }>;
+};
+
+function getWorkflowState(exam: ExamWithUploads | null, record: ExamRecord | null, selectedMode: string, showNewSheet: boolean) {
+  const completedSteps = new Set<number>();
+  if (exam) completedSteps.add(1);
+  if (exam && exam.answerKeys.length > 0) completedSteps.add(2);
+  if (exam && exam.uploads.length > 0) completedSteps.add(3);
+  if (record && record.gradedCount > 0) completedSteps.add(4);
+
+  let currentStep = 1;
+  if (showNewSheet || !exam) {
+    currentStep = 1;
+  } else if (selectedMode === "answers" || exam.answerKeys.length === 0) {
+    currentStep = 2;
+  } else if (selectedMode === "upload" || exam.uploads.length === 0) {
+    currentStep = 3;
+  } else if (record && record.gradedCount === 0) {
+    currentStep = 4;
+  } else {
+    currentStep = 5;
+  }
+
+  return { currentStep, completedSteps };
+}
+
+function buildResultInsights(exam: ExamWithUploads): OmrResultInsights {
+  const gradedUploads = exam.uploads
+    .map((upload) => ({ upload, result: upload.results[0] ?? null }))
+    .filter((item): item is { upload: ExamUploadLite; result: ResultWithItems } => Boolean(item.result));
+  const scores = gradedUploads.map(({ result }) => result.totalScore);
+  const averageScore = scores.length ? Math.round((scores.reduce((sum, score) => sum + score, 0) / scores.length) * 10) / 10 : null;
+  const highScore = scores.length ? Math.max(...scores) : null;
+  const lowScore = scores.length ? Math.min(...scores) : null;
+  const questionStats = new Map<number, { questionNo: number; total: number; wrong: number }>();
+
+  for (const { result } of gradedUploads) {
+    for (const item of result.items) {
+      const current = questionStats.get(item.questionNo) ?? { questionNo: item.questionNo, total: 0, wrong: 0 };
+      current.total += 1;
+      if (item.status !== ExamResultStatus.CORRECT) current.wrong += 1;
+      questionStats.set(item.questionNo, current);
+    }
+  }
+
+  const remedialStudents = gradedUploads
+    .map(({ upload, result }) => {
+      const percent = result.maxScore > 0 ? Math.round((result.totalScore / result.maxScore) * 1000) / 10 : null;
+      return {
+        id: upload.id,
+        name: upload.student?.name ?? upload.fileName,
+        score: result.totalScore,
+        percent,
+        reviewNeededCount: result.reviewNeededCount,
+      };
+    })
+    .filter((student) => (student.percent !== null && student.percent < 60) || student.reviewNeededCount > 0)
+    .sort((a, b) => (a.percent ?? 101) - (b.percent ?? 101));
+
+  const topWrongQuestions = Array.from(questionStats.values())
+    .filter((question) => question.total > 0 && question.wrong > 0)
+    .map((question) => ({ ...question, rate: question.wrong / question.total }))
+    .sort((a, b) => b.rate - a.rate || b.wrong - a.wrong || a.questionNo - b.questionNo)
+    .slice(0, 5);
+
+  return { gradedCount: gradedUploads.length, averageScore, highScore, lowScore, remedialStudents, topWrongQuestions };
 }
 
 function ExamDetail({
@@ -1128,6 +1477,15 @@ function formatConfidence(value: number | null | undefined) {
   return `${Math.round(value * 100)}%`;
 }
 
+function formatScoreMetric(value: number | null | undefined) {
+  if (value === null || value === undefined) return "-";
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
+function formatPercent(value: number) {
+  return `${Math.round(value * 100)}%`;
+}
+
 function studentLabel(student: StudentOption | StudentBrief) {
   return [student.name, student.schoolName, student.grade].filter(Boolean).join(" / ");
 }
@@ -1137,6 +1495,36 @@ const container: CSSProperties = { width: "100%", maxWidth: "none", margin: 0, p
 const topBar: CSSProperties = { display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, padding: 16 };
 const errorNotice: CSSProperties = { border: "1px solid #fecaca", borderRadius: 10, background: "#fef2f2", color: "#991b1b", padding: "10px 12px", fontSize: 13, fontWeight: 800 };
 const warningNotice: CSSProperties = { border: "1px solid #fde68a", borderRadius: 10, background: "#fffbeb", color: "#92400e", padding: "10px 12px", fontSize: 13, fontWeight: 800 };
+const workflowPanel: CSSProperties = { background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, padding: 12, display: "grid", gap: 10 };
+const stepper: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(5, minmax(120px, 1fr))", gap: 6 };
+const stepItem: CSSProperties = { display: "flex", alignItems: "center", gap: 8, minHeight: 38, border: "1px solid #e5e7eb", borderRadius: 8, background: "#f9fafb", padding: "7px 9px", color: "#6b7280", fontSize: 12, fontWeight: 950 };
+const stepItemActive: CSSProperties = { borderColor: "#93c5fd", background: "#eff6ff", color: "#1d4ed8" };
+const stepItemComplete: CSSProperties = { borderColor: "#bbf7d0", background: "#f0fdf4", color: "#047857" };
+const stepNoPill: CSSProperties = { width: 23, height: 23, borderRadius: 999, display: "inline-flex", alignItems: "center", justifyContent: "center", background: "#e5e7eb", color: "#374151", flex: "0 0 auto" };
+const stepNoActive: CSSProperties = { background: "#2563eb", color: "#fff" };
+const stepNoComplete: CSSProperties = { background: "#16a34a", color: "#fff" };
+const stepLabel: CSSProperties = { whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" };
+const workflowEmptyState: CSSProperties = { border: "1px dashed #d1d5db", borderRadius: 8, padding: 12, display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", background: "#f9fafb" };
+const summaryCard: CSSProperties = { border: "1px solid #dbeafe", borderRadius: 8, background: "#eff6ff", padding: 12, display: "grid", gridTemplateColumns: "minmax(220px, .8fr) minmax(420px, 1.2fr)", gap: 12, alignItems: "center" };
+const summaryTitle: CSSProperties = { margin: "2px 0 5px", fontSize: 18, fontWeight: 950 };
+const summaryMetaGrid: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(3, minmax(120px, 1fr))", gap: 6 };
+const summaryItem: CSSProperties = { border: "1px solid #bfdbfe", borderRadius: 7, background: "#fff", padding: "7px 8px", display: "grid", gap: 2, fontSize: 12 };
+const workflowGrid: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(5, minmax(160px, 1fr))", gap: 8 };
+const stageCard: CSSProperties = { border: "1px solid #e5e7eb", borderRadius: 8, background: "#fff", padding: 10, display: "grid", gridTemplateRows: "auto auto 1fr", gap: 7, minHeight: 170 };
+const stageCardActive: CSSProperties = { borderColor: "#93c5fd", boxShadow: "inset 0 3px 0 #2563eb" };
+const stageCardComplete: CSSProperties = { borderColor: "#bbf7d0" };
+const stageHeader: CSSProperties = { display: "flex", justifyContent: "space-between", gap: 6, alignItems: "center" };
+const stageNo: CSSProperties = { color: "#6b7280", fontSize: 12, fontWeight: 950 };
+const stageTitle: CSSProperties = { margin: 0, fontSize: 15, fontWeight: 950 };
+const stageBody: CSSProperties = { display: "grid", alignContent: "start", gap: 6, minWidth: 0 };
+const stageMainText: CSSProperties = { margin: 0, color: "#111827", fontSize: 14, fontWeight: 950 };
+const warningText: CSSProperties = { margin: 0, color: "#92400e", fontSize: 13, fontWeight: 800 };
+const workflowActionRow: CSSProperties = { display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" };
+const resultMetricGrid: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 5 };
+const wrongQuestionList: CSSProperties = { display: "flex", flexWrap: "wrap", gap: 5 };
+const wrongQuestionPill: CSSProperties = { border: "1px solid #fecaca", borderRadius: 999, background: "#fef2f2", color: "#b91c1c", padding: "4px 7px", fontSize: 12, fontWeight: 900 };
+const remedialList: CSSProperties = { display: "flex", flexWrap: "wrap", gap: 5 };
+const remedialPill: CSSProperties = { border: "1px solid #fde68a", borderRadius: 999, background: "#fffbeb", color: "#92400e", padding: "4px 7px", fontSize: 12, fontWeight: 900 };
 const eyebrow: CSSProperties = { margin: 0, color: "#2563eb", fontSize: 12, fontWeight: 950 };
 const title: CSSProperties = { margin: "3px 0", fontSize: 25, fontWeight: 950 };
 const desc: CSSProperties = { margin: 0, color: "#6b7280" };

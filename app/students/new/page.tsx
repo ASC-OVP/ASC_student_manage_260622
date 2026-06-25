@@ -23,7 +23,6 @@ export default async function NewStudentPage() {
     }),
   ]);
   const teachers = staff.filter((member) => member.role === "TEACHER" || member.role === "MANAGER" || member.role === "ADMIN");
-  const assistants = staff.filter((member) => member.role === "ASSISTANT");
 
   return (
     <main style={page}>
@@ -64,12 +63,6 @@ export default async function NewStudentPage() {
             <select name="teacherId" defaultValue={user.role === "TEACHER" ? user.id : ""} style={input}>
               <option value="">반 담당 강사 자동 적용</option>
               {teachers.map((teacher) => <option key={teacher.id} value={teacher.id}>{teacher.name}</option>)}
-            </select>
-          </label>
-          <label style={label}>담당 조교
-            <select name="assistantId" defaultValue="" style={input}>
-              <option value="">미지정</option>
-              {assistants.map((assistant) => <option key={assistant.id} value={assistant.id}>{assistant.name}</option>)}
             </select>
           </label>
           <label style={{ ...label, gridColumn: "1 / -1" }}>기본 메모<textarea name="memo" rows={5} style={{ ...input, resize: "vertical" }} /></label>

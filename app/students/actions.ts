@@ -34,6 +34,19 @@ type ClassLessonInput = {
   memo: string | null;
 };
 
+type StudentExcelUploadRow = {
+  name?: string;
+  phone?: string;
+  parentPhone?: string;
+  schoolName?: string;
+  grade?: string;
+  classGroupId?: string;
+  subject?: string;
+  currentLevel?: string;
+  status?: string;
+  memo?: string;
+};
+
 function text(formData: FormData, key: string) {
   const value = formData.get(key);
   return value ? String(value).trim() : "";
@@ -91,6 +104,21 @@ function sheetStatusValue(value: string, fallback: string) {
 function detailStatusValue(value: string, fallback: string) {
   if (!value) return fallback;
   return /^[A-Za-z0-9_-]{1,40}$/.test(value) ? value : fallback;
+}
+
+function uploadStudentStatus(value: string | undefined | null) {
+  const normalized = String(value ?? "").trim().toUpperCase();
+  if (!normalized) return StudentStatus.ACTIVE;
+  const koreanMap: Record<string, StudentStatus> = {
+    재원: StudentStatus.ACTIVE,
+    활성: StudentStatus.ACTIVE,
+    주의: StudentStatus.WATCH,
+    휴원: StudentStatus.PAUSED,
+    중단: StudentStatus.PAUSED,
+    퇴원: StudentStatus.LEFT,
+  };
+  if (normalized in koreanMap) return koreanMap[normalized];
+  return enumValue(normalized, STUDENT_STATUSES, StudentStatus.ACTIVE);
 }
 
 function decimalValue(formData: FormData, key: string) {
@@ -410,6 +438,113 @@ export async function createStudentFromSheet(formData: FormData) {
   }
 
   revalidatePath("/students");
+}
+
+export async function createStudentsFromExcelUpload(formData: FormData) {
+  const user = await requireUser();
+  if (!canManageStudents(user.role)) {
+    throw new Error("학생을 등록할 권한이 없습니다.");
+  }
+
+  const rawRows = text(formData, "rows");
+  let parsedRows: StudentExcelUploadRow[];
+  try {
+    parsedRows = JSON.parse(rawRows) as StudentExcelUploadRow[];
+  } catch {
+    throw new Error("업로드 데이터를 읽을 수 없습니다.");
+  }
+
+  if (!Array.isArray(parsedRows)) {
+    throw new Error("업로드 데이터 형식이 올바르지 않습니다.");
+  }
+
+  const rows = parsedRows
+    .map((row) => ({
+      name: String(row?.name ?? "").trim().slice(0, 80),
+      phone: String(row?.phone ?? "").trim().slice(0, 40),
+      parentPhone: String(row?.parentPhone ?? "").trim().slice(0, 40),
+      schoolName: String(row?.schoolName ?? "").trim().slice(0, 80),
+      grade: String(row?.grade ?? "").trim().slice(0, 40),
+      classGroupId: cleanId(String(row?.classGroupId ?? "").trim()),
+      subject: String(row?.subject ?? "").trim().slice(0, 80),
+      currentLevel: String(row?.currentLevel ?? "").trim().slice(0, 80),
+      status: String(row?.status ?? "").trim().slice(0, 40),
+      memo: String(row?.memo ?? "").trim().slice(0, 1000),
+    }))
+    .filter((row) => Object.values(row).some((value) => String(value ?? "").trim()));
+
+  if (rows.length === 0) {
+    throw new Error("등록할 학생 데이터가 없습니다.");
+  }
+
+  if (rows.length > 300) {
+    throw new Error("한 번에 최대 300명까지 등록할 수 있습니다.");
+  }
+
+  const missingNameCount = rows.filter((row) => !row.name).length;
+  if (missingNameCount > 0) {
+    throw new Error(`학생명이 비어 있는 행 ${missingNameCount}개가 있습니다.`);
+  }
+
+  const classGroupIds = Array.from(new Set(rows.map((row) => row.classGroupId).filter((id): id is string => Boolean(id))));
+  const classGroups = classGroupIds.length
+    ? await prisma.classGroup.findMany({
+        where: { id: { in: classGroupIds }, academyId: user.academyId },
+        select: { id: true, teacherId: true },
+      })
+    : [];
+  const classGroupMap = new Map(classGroups.map((classGroup) => [classGroup.id, classGroup]));
+
+  if (classGroupIds.some((id) => !classGroupMap.has(id))) {
+    throw new Error("소속 반 정보를 확인할 수 없는 행이 있습니다.");
+  }
+
+  let createdCount = 0;
+  await prisma.$transaction(async (tx) => {
+    for (const row of rows) {
+      const classGroup = row.classGroupId ? classGroupMap.get(row.classGroupId) ?? null : null;
+      const student = await tx.student.create({
+        data: {
+          academyId: user.academyId,
+          name: row.name,
+          phone: row.phone || null,
+          parentPhone: row.parentPhone || null,
+          schoolName: row.schoolName || null,
+          grade: row.grade || null,
+          subject: row.subject || null,
+          currentLevel: row.currentLevel || null,
+          status: uploadStudentStatus(row.status),
+          memo: row.memo || null,
+          teacherId: classGroup?.teacherId ?? null,
+          assistantId: null,
+        },
+      });
+      createdCount += 1;
+
+      if (classGroup) {
+        await tx.studentClass.create({
+          data: {
+            academyId: user.academyId,
+            studentId: student.id,
+            classGroupId: classGroup.id,
+            isPrimary: true,
+          },
+        });
+      }
+    }
+  });
+
+  await recordActivity({
+    actor: user,
+    action: "CREATE",
+    entityType: "Student",
+    entityId: "bulk-excel-upload",
+    summary: `엑셀 업로드 학생 일괄 등록: ${createdCount}명`,
+    metadata: { createdCount },
+  });
+
+  revalidatePath("/students");
+  return { createdCount };
 }
 
 export async function deleteStudentFromSheet(formData: FormData) {

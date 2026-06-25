@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { CSSProperties } from "react";
 import StudentClassGroupSelect from "@/components/StudentClassGroupSelect";
+import StudentExcelUploadModal from "@/components/StudentExcelUploadModal";
 import StudentLessonSpreadsheet, { type LessonClassGroupOption } from "@/components/StudentLessonSpreadsheet";
 import type { StudentSheetRow } from "@/components/StudentSheetMatrix";
 import { requireUser } from "@/lib/auth";
@@ -27,7 +28,7 @@ export default async function StudentsPage({ searchParams }: Props) {
   const requestedClassGroupId = cleanFilter(sp.classGroupId);
   const explicitAllClasses = sp.classGroupId === "all";
 
-  const [classGroups, optionSettings, customSettings] = await Promise.all([
+  const [classGroups, optionSettings, customSettings, uploadStudents] = await Promise.all([
     prisma.classGroup.findMany({
       where: classGroupWhereForUser(user),
       orderBy: [{ status: "asc" }, { name: "asc" }],
@@ -41,6 +42,11 @@ export default async function StudentsPage({ searchParams }: Props) {
     }),
     getStudentSheetOptionSettings(user.academyId),
     getStudentSheetCustomSettings(user.academyId),
+    prisma.student.findMany({
+      where: studentWhereForUser(user),
+      orderBy: [{ name: "asc" }, { createdAt: "asc" }],
+      select: { id: true, name: true, phone: true, parentPhone: true },
+    }),
   ]);
 
   const classGroupOptions: LessonClassGroupOption[] = classGroups.map((classGroup) => ({
@@ -82,6 +88,7 @@ export default async function StudentsPage({ searchParams }: Props) {
       },
     },
   });
+  const canUploadStudents = user.role === "ADMIN" || user.role === "MANAGER" || user.role === "TEACHER";
 
   const rows: StudentSheetRow[] = students.map((student, index) => {
     const selectedClass = effectiveClassGroupId ? student.studentClasses.find((membership) => membership.classGroupId === effectiveClassGroupId) : null;
@@ -136,6 +143,18 @@ export default async function StudentsPage({ searchParams }: Props) {
           </div>
           <div style={headerActions}>
             <StudentClassGroupSelect selectedId={effectiveClassGroupId} classGroups={classGroupOptions} />
+            {canUploadStudents && (
+              <StudentExcelUploadModal
+                classGroups={classGroupOptions}
+                existingStudents={uploadStudents.map((student) => ({
+                  id: student.id,
+                  name: student.name,
+                  phone: student.phone ?? "",
+                  parentPhone: student.parentPhone ?? "",
+                }))}
+                defaultClassGroupId={effectiveClassGroupId}
+              />
+            )}
             <Link href="/students/new" style={addButton}>+ 학생 추가</Link>
           </div>
         </header>
