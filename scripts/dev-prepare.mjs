@@ -5,6 +5,8 @@ import { fileURLToPath } from "node:url";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const prismaCli = join(root, "node_modules", "prisma", "build", "index.js");
+const nextCli = join(root, "node_modules", "next", "dist", "bin", "next");
+const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
 
 function hasGeneratedPrismaClient() {
   return existsSync(join(root, "lib", "generated", "prisma", "index.js"));
@@ -37,6 +39,19 @@ function run(command, args, options = {}) {
   process.exit(result.status ?? 1);
 }
 
+function ensureDependencies() {
+  if (existsSync(prismaCli) && existsSync(nextCli)) return;
+
+  console.log("node_modules is missing or incomplete. Running npm install before starting dev server...");
+  run(npmCommand, ["install"]);
+
+  if (!existsSync(prismaCli) || !existsSync(nextCli)) {
+    console.error("Dependencies are still missing after npm install. Please remove node_modules and run npm install again.");
+    process.exit(1);
+  }
+}
+
 run(process.execPath, ["scripts/ensure-dev-env.mjs"]);
+ensureDependencies();
 run(process.execPath, [prismaCli, "generate", "--schema=prisma/schema.prisma"], { allowLockedPrismaEngine: true });
 run(process.execPath, [prismaCli, "migrate", "deploy", "--schema=prisma/schema.prisma"]);
