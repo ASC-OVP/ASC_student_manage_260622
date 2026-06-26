@@ -79,7 +79,7 @@ export default async function OmrUploadReviewPage({ params }: Props) {
 const page: CSSProperties = { minHeight: "100vh", background: "#f3f4f6", color: "#111827" };
 const container: CSSProperties = { width: "100%", maxWidth: "none", margin: 0, padding: 14, display: "grid", gap: 12 };
 const topBar: CSSProperties = { display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, padding: 16 };
-const eyebrow: CSSProperties = { margin: 0, color: "#2563eb", fontSize: 12, fontWeight: 950 };
+const eyebrow: CSSProperties = { margin: 0, color: "var(--asc-primary-deep)", fontSize: 12, fontWeight: 950 };
 const title: CSSProperties = { margin: "3px 0", fontSize: 25, fontWeight: 950 };
 const desc: CSSProperties = { margin: 0, color: "#6b7280" };
 const backButton: CSSProperties = { border: "1px solid #d1d5db", borderRadius: 8, background: "#fff", color: "#111827", padding: "10px 12px", fontWeight: 950, textDecoration: "none", whiteSpace: "nowrap" };

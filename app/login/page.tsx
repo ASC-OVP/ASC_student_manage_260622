@@ -44,7 +44,7 @@ const page: CSSProperties = {
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
-  background: "linear-gradient(135deg,#111827,#2563eb)",
+  background: "linear-gradient(135deg,#0f172a,#083891)",
   color: "#111827",
   padding: 24,
 };

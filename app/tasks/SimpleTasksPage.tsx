@@ -1,8 +1,9 @@
 import { canCreateTask, requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import type { ClassGroup, RecurringTask, Student, Task, TaskChecklistItem, TaskComment, TaskSubmission, User } from "@/lib/generated/prisma";
-import { sheetFillPalette } from "@/lib/colorPalettes";
 import { daysOfWeekText, generateDueRecurringTasks, getNextRecurringDate, recurringTypeText, weekdayOptions } from "@/lib/recurringTasks";
+import TaskAssigneePopover from "./TaskAssigneePopover";
+import TaskColorPopover from "./TaskColorPopover";
 import Link from "next/link";
 import type { CSSProperties, ReactNode } from "react";
 import {
@@ -11,6 +12,7 @@ import {
   submitTaskAction,
   toggleRecurringTaskAction,
   updateRecurringTaskAction,
+  updateTaskAssigneesAction,
   updateTaskColorAction,
   updateTaskStatus,
 } from "./actions";
@@ -241,7 +243,7 @@ export default async function SimpleTasksPage({ searchParams }: Props = {}) {
             <Panel title={taskPanelTitle(activeTab, isAssistant)} right={<span style={softText}>{visibleTasks.length}개</span>}>
               <div style={taskList}>
                 {visibleTasks.map((task) => (
-                  <TaskCard key={task.id} task={task} currentUserId={user.id} isAssistant={isAssistant} />
+                  <TaskCard key={task.id} task={task} currentUser={user} isAssistant={isAssistant} staff={staff} />
                 ))}
                 {visibleTasks.length === 0 && <Empty>업무가 없습니다.</Empty>}
               </div>
@@ -536,17 +538,29 @@ function Td({ children }: { children: ReactNode }) {
   return <td style={td}>{children}</td>;
 }
 
-function TaskCard({ task, currentUserId, isAssistant }: { task: TaskRow; currentUserId: string; isAssistant: boolean }) {
+function TaskCard({
+  task,
+  currentUser,
+  isAssistant,
+  staff,
+}: {
+  task: TaskRow;
+  currentUser: Pick<User, "id" | "role">;
+  isAssistant: boolean;
+  staff: Array<Pick<User, "id" | "name" | "role">>;
+}) {
   const effective = effectiveStatus(task);
-  const canWork = isAssistant ? isTaskAssignedTo(task, currentUserId) : true;
+  const canWork = isAssistant ? isTaskAssignedTo(task, currentUser.id) : true;
+  const canReassign = canReassignTask(task, currentUser);
   const lastRecord = task.submissions[0]?.content || task.comments[0]?.content || task.evidenceSummary;
   const checkedCount = task.checklistItems.filter((item) => item.isDone).length;
-  const displayColor = taskDisplayColor(task, currentUserId, isAssistant);
+  const displayColor = taskDisplayColor(task, currentUser.id, isAssistant);
+  const dday = getTaskDdayInfo(task.dueDate, task.status === "DONE");
 
   return (
     <article style={{ ...taskCard, borderLeft: `6px solid ${displayColor}` }}>
       <div style={taskMain}>
-        <div>
+        <div style={taskContent}>
           <div style={taskTopLine}>
             <span style={statusBadge(effective)}>{statusText(effective)}</span>
             <span style={priorityBadge(task.priority)}>{priorityText(task.priority)}</span>
@@ -567,15 +581,40 @@ function TaskCard({ task, currentUserId, isAssistant }: { task: TaskRow; current
           {lastRecord && <p style={taskNoteStyle}>{lastRecord}</p>}
         </div>
         <div style={taskSide}>
-          <TaskColorPicker taskId={task.id} currentColor={displayColor} />
+          <div style={taskSideTop}>
+            <TaskColorPopover taskId={task.id} currentColor={displayColor} action={updateTaskColorAction} />
+            <span style={ddayBadge(dday.tone)}>{dday.label}</span>
+          </div>
           <span style={task.status === "DONE" ? successBadge : badge}>체크 {checkedCount}/{task.checklistItems.length}</span>
           {task.actualMinutes && <span style={badge}>{task.actualMinutes}분</span>}
+          <div style={taskSideMeta}>
+            <span>마감 {formatDueFull(task.dueDate)}</span>
+          </div>
+          {canReassign && (
+            <TaskAssigneePopover
+              taskId={task.id}
+              currentLabel={assigneeNames(task)}
+              selectedAssigneeIds={taskAssigneeIds(task)}
+              staff={staff}
+              action={updateTaskAssigneesAction}
+            />
+          )}
           <TaskActions task={task} canWork={canWork} />
           <Link href={`/tasks/${task.id}`} style={smallLink}>상세</Link>
         </div>
       </div>
     </article>
   );
+}
+
+function canReassignTask(task: TaskRow, user: Pick<User, "id" | "role">) {
+  if (user.role === "ASSISTANT") return false;
+  if (user.role === "ADMIN" || user.role === "MANAGER") return true;
+  return task.creatorId === user.id || task.reviewerId === user.id || task.classGroup?.teacherId === user.id;
+}
+
+function taskAssigneeIds(task: TaskRow) {
+  return task.assignees.length > 0 ? task.assignees.map((assignment) => assignment.assigneeId) : [task.assigneeId];
 }
 
 function TaskActions({ task, canWork }: { task: TaskRow; canWork: boolean }) {
@@ -604,35 +643,6 @@ function TaskActions({ task, canWork }: { task: TaskRow; canWork: boolean }) {
       <input type="hidden" name="content" value="완료 처리" />
       <button style={smallPrimary}>완료</button>
     </form>
-  );
-}
-
-function TaskColorPicker({ taskId, currentColor }: { taskId: string; currentColor: string }) {
-  const normalizedCurrent = currentColor.toLowerCase();
-
-  return (
-    <details style={colorPicker}>
-      <summary style={colorPickerTrigger} title="업무 색상 선택" aria-label="업무 색상 선택">
-        <span style={currentColorDot(currentColor)} />
-      </summary>
-      <div style={colorPalettePanel}>
-        {sheetFillPalette.map((color) => {
-          const active = normalizedCurrent === color.value.toLowerCase();
-          return (
-            <form key={color.value} action={updateTaskColorAction} style={colorSwatchForm}>
-              <input type="hidden" name="taskId" value={taskId} />
-              <input type="hidden" name="color" value={color.value} />
-              <button
-                type="submit"
-                style={colorPaletteButton(color.value, active)}
-                title={color.label}
-                aria-label={`업무 색상 ${color.label}`}
-              />
-            </form>
-          );
-        })}
-      </div>
-    </details>
   );
 }
 
@@ -752,6 +762,21 @@ function effectiveStatus(task: Pick<Task, "status" | "dueDate">) {
   return task.status;
 }
 
+type DdayTone = "gray" | "warning" | "info" | "danger" | "success";
+
+function getTaskDdayInfo(dueDate: Date | null, isCompleted: boolean): { label: string; tone: DdayTone } {
+  if (isCompleted) return { label: "완료됨", tone: "success" };
+  if (!dueDate || Number.isNaN(dueDate.getTime())) return { label: "마감 미설정", tone: "gray" };
+
+  const today = stripTime(new Date());
+  const due = stripTime(dueDate);
+  const diffDays = Math.round((due.getTime() - today.getTime()) / 86_400_000);
+
+  if (diffDays === 0) return { label: "D-day", tone: "warning" };
+  if (diffDays > 0) return { label: `D-${diffDays}`, tone: diffDays <= 3 ? "warning" : "info" };
+  return { label: `지연 ${Math.abs(diffDays)}일`, tone: "danger" };
+}
+
 function statusText(status: string) {
   const labels: Record<string, string> = {
     TODO: "해야 함",
@@ -813,9 +838,17 @@ function statusBadge(status: string): CSSProperties {
   return badge;
 }
 
+function ddayBadge(tone: DdayTone): CSSProperties {
+  if (tone === "success") return successBadge;
+  if (tone === "danger") return dangerBadge;
+  if (tone === "warning") return warnBadge;
+  if (tone === "info") return infoBadge;
+  return badge;
+}
+
 function statusColor(status: string) {
   if (status === "DONE") return "#16a34a";
-  if (status === "IN_PROGRESS") return "#2563eb";
+  if (status === "IN_PROGRESS") return "#0b50d0";
   if (status === "HOLD") return "#d97706";
   if (status === "OVERDUE" || status === "REJECTED") return "#dc2626";
   return "#64748b";
@@ -830,6 +863,11 @@ function taskPeriodText(task: Pick<Task, "startDate" | "dueDate">) {
 
 function formatDue(date: Date | null) {
   if (!date) return "미설정";
+  return new Intl.DateTimeFormat("ko-KR", { month: "2-digit", day: "2-digit" }).format(date);
+}
+
+function formatDueFull(date: Date | null) {
+  if (!date || Number.isNaN(date.getTime())) return "미설정";
   return new Intl.DateTimeFormat("ko-KR", { month: "2-digit", day: "2-digit" }).format(date);
 }
 
@@ -892,132 +930,87 @@ function buildAssigneeStats(tasks: TaskRow[]) {
   return [...rows.values()].sort((a, b) => b.total - a.total);
 }
 
-const page: CSSProperties = { padding: 14, color: "#111827", background: "#f3f4f6", minHeight: "100vh" };
-const container: CSSProperties = { width: "100%", maxWidth: "none", margin: 0, display: "grid", gap: 12 };
-const header: CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16 };
-const eyebrow: CSSProperties = { margin: "0 0 4px", color: "#2563eb", fontWeight: 950, fontSize: 12 };
-const title: CSSProperties = { fontSize: 26, fontWeight: 950, margin: "0 0 6px" };
-const desc: CSSProperties = { color: "#6b7280", margin: 0 };
-const headerActions: CSSProperties = { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" };
-const roleBadge: CSSProperties = { border: "1px solid #d1d5db", borderRadius: 999, padding: "8px 12px", background: "#fff", fontWeight: 950 };
-const primaryBtn: CSSProperties = { background: "#111827", color: "#fff", padding: "10px 14px", borderRadius: 8, textDecoration: "none", fontWeight: 950 };
-const secondaryBtn: CSSProperties = { ...primaryBtn, background: "#fff", color: "#111827", border: "1px solid #d1d5db" };
-const tabsWrap: CSSProperties = { display: "flex", gap: 6, flexWrap: "wrap", background: "#fff", border: "1px solid #d1d5db", borderRadius: 8, padding: 8 };
-const tabStyle: CSSProperties = { borderRadius: 7, padding: "8px 11px", color: "#374151", textDecoration: "none", fontWeight: 950, background: "#fff" };
-const activeTabStyle: CSSProperties = { ...tabStyle, color: "#fff", background: "#111827" };
+const page: CSSProperties = { padding: 12, color: "var(--asc-text)", background: "var(--asc-bg-subtle)", minHeight: "100vh" };
+const container: CSSProperties = { width: "100%", maxWidth: "none", margin: 0, display: "grid", gap: 10 };
+const header: CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 };
+const eyebrow: CSSProperties = { margin: "0 0 4px", color: "var(--asc-primary)", fontWeight: 950, fontSize: 12 };
+const title: CSSProperties = { fontSize: 24, fontWeight: 950, margin: "0 0 4px", color: "var(--asc-text)" };
+const desc: CSSProperties = { color: "var(--asc-text-muted)", margin: 0, fontSize: 13 };
+const headerActions: CSSProperties = { display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap", justifyContent: "flex-end" };
+const roleBadge: CSSProperties = { border: "1px solid var(--asc-border)", borderRadius: 999, padding: "6px 10px", background: "var(--asc-bg)", fontWeight: 950 };
+const primaryBtn: CSSProperties = { background: "var(--asc-primary)", color: "#fff", border: "1px solid var(--asc-primary)", padding: "8px 12px", borderRadius: "var(--asc-radius-lg)", textDecoration: "none", fontWeight: 950 };
+const secondaryBtn: CSSProperties = { ...primaryBtn, background: "var(--asc-bg)", color: "var(--asc-text)", border: "1px solid var(--asc-border-strong)" };
+const tabsWrap: CSSProperties = { display: "flex", gap: 5, flexWrap: "wrap", background: "var(--asc-surface)", border: "1px solid var(--asc-border)", borderRadius: "var(--asc-radius-lg)", padding: 6 };
+const tabStyle: CSSProperties = { borderRadius: "var(--asc-radius-md)", padding: "7px 10px", color: "var(--asc-text-subtle)", textDecoration: "none", fontWeight: 950, background: "var(--asc-bg)" };
+const activeTabStyle: CSSProperties = { ...tabStyle, color: "#fff", background: "var(--asc-primary)" };
 const summaryGrid: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8 };
-const summaryCard: CSSProperties = { background: "#fff", border: "1px solid #e5e7eb", borderRadius: 8, padding: 12, display: "flex", flexDirection: "column", gap: 6 };
-const summaryWarn: CSSProperties = { background: "#fff7ed", border: "1px solid #fed7aa" };
-const summaryHold: CSSProperties = { background: "#fffbeb", border: "1px solid #fde68a" };
-const summaryDanger: CSSProperties = { background: "#fef2f2", border: "1px solid #fecaca" };
-const dashboardGrid: CSSProperties = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 };
+const summaryCard: CSSProperties = { background: "var(--asc-bg)", border: "1px solid var(--asc-border)", borderRadius: "var(--asc-radius-lg)", padding: 10, display: "flex", flexDirection: "column", gap: 4 };
+const summaryWarn: CSSProperties = { background: "var(--asc-warning-soft)", border: "1px solid var(--asc-warning)" };
+const summaryHold: CSSProperties = { background: "var(--asc-warning-soft)", border: "1px solid var(--asc-warning)" };
+const summaryDanger: CSSProperties = { background: "var(--asc-danger-soft)", border: "1px solid var(--asc-danger)" };
+const dashboardGrid: CSSProperties = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 };
 const workSplit: CSSProperties = { display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(320px, 380px)", gap: 10, alignItems: "start", position: "relative", overflow: "visible" };
 const stickyCalendarPanel: CSSProperties = { position: "sticky", top: 14, alignSelf: "start", minWidth: 0, height: "fit-content", zIndex: 3 };
 const stickyCalendarInner: CSSProperties = { maxHeight: "calc(100vh - 28px)", overflowY: "auto", overscrollBehavior: "contain" };
-const panel: CSSProperties = { background: "#fff", border: "1px solid #d1d5db", borderRadius: 8, padding: 12 };
-const panelHead: CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 10 };
-const panelTitle: CSSProperties = { margin: 0, fontSize: 18, fontWeight: 950 };
-const softText: CSSProperties = { color: "#6b7280", fontSize: 12, fontWeight: 900 };
-const miniList: CSSProperties = { display: "grid", gap: 8 };
-const miniTask: CSSProperties = { display: "grid", gridTemplateColumns: "1fr auto", gap: 8, alignItems: "center", border: "1px solid #e5e7eb", borderRadius: 8, padding: 10 };
-const miniTitle: CSSProperties = { color: "#111827", textDecoration: "none", fontWeight: 950 };
-const assigneeRow: CSSProperties = { display: "grid", gridTemplateColumns: "1fr repeat(4, auto)", gap: 8, alignItems: "center", borderBottom: "1px solid #f1f5f9", padding: "8px 0", fontSize: 13 };
-const moreListLink: CSSProperties = { display: "block", padding: "9px 10px", borderRadius: 8, border: "1px solid #e5e7eb", background: "#f8fafc", color: "#2563eb", textAlign: "center", textDecoration: "none", fontSize: 12, fontWeight: 950 };
+const panel: CSSProperties = { background: "var(--asc-surface)", border: "1px solid var(--asc-border)", borderRadius: "var(--asc-radius-lg)", padding: 10 };
+const panelHead: CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 8 };
+const panelTitle: CSSProperties = { margin: 0, fontSize: 16, fontWeight: 950 };
+const softText: CSSProperties = { color: "var(--asc-text-muted)", fontSize: 12, fontWeight: 900 };
+const miniList: CSSProperties = { display: "grid", gap: 6 };
+const miniTask: CSSProperties = { display: "grid", gridTemplateColumns: "1fr auto", gap: 6, alignItems: "center", border: "1px solid var(--asc-border)", borderRadius: "var(--asc-radius-lg)", padding: 8 };
+const miniTitle: CSSProperties = { color: "var(--asc-text)", textDecoration: "none", fontWeight: 950 };
+const assigneeRow: CSSProperties = { display: "grid", gridTemplateColumns: "1fr repeat(4, auto)", gap: 8, alignItems: "center", borderBottom: "1px solid var(--asc-border)", padding: "8px 0", fontSize: 13 };
+const moreListLink: CSSProperties = { display: "block", padding: "9px 10px", borderRadius: "var(--asc-radius-lg)", border: "1px solid var(--asc-border)", background: "var(--asc-bg-subtle)", color: "var(--asc-primary-hover)", textAlign: "center", textDecoration: "none", fontSize: 12, fontWeight: 950 };
 const taskList: CSSProperties = { display: "grid", gap: 6 };
-const taskCard: CSSProperties = { border: "1px solid #d1d5db", borderRadius: 8, background: "#fff", padding: "8px 10px", display: "grid", gap: 6 };
-const taskMain: CSSProperties = { display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 8, alignItems: "center" };
+const taskCard: CSSProperties = { border: "1px solid var(--asc-border)", borderRadius: "var(--asc-radius-lg)", background: "var(--asc-bg)", padding: "8px 10px", display: "grid", gap: 6 };
+const taskMain: CSSProperties = { display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(150px, auto)", gap: 10, alignItems: "start" };
+const taskContent: CSSProperties = { minWidth: 0 };
 const taskTopLine: CSSProperties = { display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 4 };
-const taskTitle: CSSProperties = { color: "#111827", textDecoration: "none", fontSize: 15, fontWeight: 950 };
-const taskDesc: CSSProperties = { margin: "3px 0 4px", color: "#475569", maxWidth: 760, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontSize: 13 };
-const taskNoteStyle: CSSProperties = { margin: "3px 0 0", color: "#64748b", fontSize: 12, lineHeight: 1.35, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" };
-const metaLine: CSSProperties = { display: "flex", gap: 8, flexWrap: "wrap", color: "#6b7280", fontSize: 12, fontWeight: 900 };
-const taskSide: CSSProperties = { display: "flex", gap: 5, justifyContent: "flex-end", alignItems: "center", flexWrap: "wrap" };
-const colorPicker: CSSProperties = { position: "relative", display: "inline-flex" };
-const colorPickerTrigger: CSSProperties = {
-  width: 28,
-  height: 28,
-  display: "grid",
-  placeItems: "center",
-  border: "1px solid #d1d5db",
-  borderRadius: 7,
-  background: "#fff",
-  cursor: "pointer",
-  listStyle: "none",
-};
-const colorPalettePanel: CSSProperties = {
-  position: "absolute",
-  top: 32,
-  right: 0,
-  zIndex: 20,
-  width: 236,
-  display: "grid",
-  gridTemplateColumns: "repeat(8, 22px)",
-  gap: 5,
-  padding: 9,
-  border: "1px solid #d1d5db",
-  borderRadius: 8,
-  background: "#fff",
-  boxShadow: "0 14px 34px rgba(15, 23, 42, 0.18)",
-};
-const colorSwatchForm: CSSProperties = { display: "contents" };
-function currentColorDot(color: string): CSSProperties {
-  return {
-    width: 16,
-    height: 16,
-    borderRadius: 999,
-    border: "1px solid #94a3b8",
-    background: color,
-  };
-}
-function colorPaletteButton(color: string, active: boolean): CSSProperties {
-  return {
-    width: 22,
-    height: 22,
-    borderRadius: 999,
-    border: active ? "2px solid #111827" : "1px solid #cbd5e1",
-    background: color,
-    boxShadow: active ? "0 0 0 2px #bfdbfe" : "none",
-    cursor: "pointer",
-  };
-}
-const smallLink: CSSProperties = { color: "#2563eb", textDecoration: "none", fontWeight: 950, fontSize: 12 };
+const taskTitle: CSSProperties = { color: "var(--asc-text)", textDecoration: "none", fontSize: 15, fontWeight: 950 };
+const taskDesc: CSSProperties = { margin: "3px 0 4px", color: "var(--asc-text-subtle)", maxWidth: 760, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontSize: 13 };
+const taskNoteStyle: CSSProperties = { margin: "3px 0 0", color: "var(--asc-text-muted)", fontSize: 12, lineHeight: 1.35, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" };
+const metaLine: CSSProperties = { display: "flex", gap: 8, flexWrap: "wrap", color: "var(--asc-text-muted)", fontSize: 12, fontWeight: 900 };
+const taskSide: CSSProperties = { display: "grid", justifyItems: "end", alignContent: "start", gap: 6, minWidth: 150 };
+const taskSideTop: CSSProperties = { display: "inline-flex", gap: 5, alignItems: "center", justifyContent: "flex-end" };
+const taskSideMeta: CSSProperties = { display: "grid", gap: 2, justifyItems: "end", color: "var(--asc-text-muted)", fontSize: 12, fontWeight: 900, lineHeight: 1.3 };
+const smallLink: CSSProperties = { color: "var(--asc-primary-hover)", textDecoration: "none", fontWeight: 950, fontSize: 12 };
 const label: CSSProperties = { display: "flex", flexDirection: "column", gap: 6, fontWeight: 900, fontSize: 13 };
 const inlineActions: CSSProperties = { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" };
-const errorText: CSSProperties = { background: "#fee2e2", color: "#991b1b", padding: 10, borderRadius: 8, fontWeight: 900 };
+const errorText: CSSProperties = { background: "var(--asc-danger-soft)", color: "var(--asc-danger)", padding: 10, borderRadius: "var(--asc-radius-lg)", fontWeight: 900 };
 const recurringForm: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 };
-const dayFieldset: CSSProperties = { border: "1px solid #d1d5db", borderRadius: 8, padding: 8, minWidth: 0 };
+const dayFieldset: CSSProperties = { border: "1px solid var(--asc-border)", borderRadius: "var(--asc-radius-lg)", padding: 8, minWidth: 0 };
 const dayChecks: CSSProperties = { display: "flex", gap: 8, flexWrap: "wrap" };
 const dayCheck: CSSProperties = { display: "inline-flex", gap: 4, alignItems: "center", fontSize: 13, fontWeight: 900 };
-const tableWrap: CSSProperties = { overflow: "auto", border: "1px solid #e5e7eb", borderRadius: 8 };
+const tableWrap: CSSProperties = { overflow: "auto", border: "1px solid var(--asc-border)", borderRadius: "var(--asc-radius-lg)" };
 const table: CSSProperties = { width: "100%", borderCollapse: "collapse", fontSize: 13 };
-const th: CSSProperties = { textAlign: "left", padding: "9px 10px", background: "#f3f4f6", borderBottom: "1px solid #d1d5db", whiteSpace: "nowrap" };
-const td: CSSProperties = { padding: "9px 10px", borderBottom: "1px solid #f3f4f6", verticalAlign: "top", whiteSpace: "nowrap" };
-const subText: CSSProperties = { marginTop: 3, color: "#6b7280", fontSize: 12, fontWeight: 800 };
-const editBox: CSSProperties = { marginTop: 8, minWidth: 0, width: "min(680px, 100%)", maxWidth: "100%", background: "#fff", border: "1px solid #e5e7eb", borderRadius: 8, padding: 10 };
-const summaryButton: CSSProperties = { cursor: "pointer", color: "#2563eb", fontWeight: 950 };
+const th: CSSProperties = { textAlign: "left", padding: "8px 9px", background: "var(--asc-bg-subtle)", borderBottom: "1px solid var(--asc-border)", whiteSpace: "nowrap" };
+const td: CSSProperties = { padding: "8px 9px", borderBottom: "1px solid var(--asc-border)", verticalAlign: "top", whiteSpace: "nowrap" };
+const subText: CSSProperties = { marginTop: 3, color: "var(--asc-text-muted)", fontSize: 12, fontWeight: 800 };
+const editBox: CSSProperties = { marginTop: 8, minWidth: 0, width: "min(680px, 100%)", maxWidth: "100%", background: "var(--asc-bg)", border: "1px solid var(--asc-border)", borderRadius: "var(--asc-radius-lg)", padding: 10 };
+const summaryButton: CSSProperties = { cursor: "pointer", color: "var(--asc-primary-hover)", fontWeight: 950 };
 const checkLabel: CSSProperties = { display: "flex", alignItems: "center", gap: 6 };
-const textarea: CSSProperties = { width: "100%", border: "1px solid #d1d5db", borderRadius: 8, padding: 8, resize: "vertical", background: "#fff" };
-const input: CSSProperties = { width: "100%", height: 32, border: "1px solid #d1d5db", borderRadius: 8, padding: "0 8px", background: "#fff" };
-const smallPrimary: CSSProperties = { height: 28, border: "1px solid #111827", borderRadius: 7, background: "#111827", color: "#fff", padding: "0 9px", fontSize: 12, fontWeight: 950 };
-const smallGhost: CSSProperties = { ...smallPrimary, background: "#fff", color: "#111827", border: "1px solid #d1d5db" };
+const textarea: CSSProperties = { width: "100%", border: "1px solid var(--asc-border)", borderRadius: "var(--asc-radius-lg)", padding: 8, resize: "vertical", background: "var(--asc-bg)", color: "var(--asc-text)" };
+const input: CSSProperties = { width: "100%", height: 32, border: "1px solid var(--asc-border)", borderRadius: "var(--asc-radius-lg)", padding: "0 8px", background: "var(--asc-bg)", color: "var(--asc-text)" };
+const smallPrimary: CSSProperties = { height: 28, border: "1px solid var(--asc-primary)", borderRadius: "var(--asc-radius-md)", background: "var(--asc-primary)", color: "#fff", padding: "0 9px", fontSize: 12, fontWeight: 950 };
+const smallGhost: CSSProperties = { ...smallPrimary, background: "var(--asc-bg)", color: "var(--asc-text)", border: "1px solid var(--asc-border-strong)" };
 const completeForm: CSSProperties = { display: "inline-flex" };
 const doneAction: CSSProperties = { display: "inline-flex", alignItems: "center", gap: 5, flexWrap: "wrap", justifyContent: "flex-end" };
-const doneInline: CSSProperties = { color: "#166534", fontSize: 12, fontWeight: 950, whiteSpace: "nowrap" };
-const badge: CSSProperties = { display: "inline-flex", alignItems: "center", height: 22, borderRadius: 999, background: "#f1f5f9", color: "#475569", padding: "0 7px", fontSize: 11, fontWeight: 950, whiteSpace: "nowrap" };
-const infoBadge: CSSProperties = { ...badge, background: "#dbeafe", color: "#1d4ed8" };
-const warnBadge: CSSProperties = { ...badge, background: "#fef3c7", color: "#92400e" };
+const doneInline: CSSProperties = { color: "var(--asc-success)", fontSize: 12, fontWeight: 950, whiteSpace: "nowrap" };
+const badge: CSSProperties = { display: "inline-flex", alignItems: "center", height: 22, borderRadius: 999, background: "var(--asc-bg-subtle)", color: "var(--asc-text-subtle)", padding: "0 7px", fontSize: 11, fontWeight: 950, whiteSpace: "nowrap" };
+const infoBadge: CSSProperties = { ...badge, background: "var(--asc-info-soft)", color: "var(--asc-info)" };
+const warnBadge: CSSProperties = { ...badge, background: "var(--asc-warning-soft)", color: "var(--asc-warning-text)" };
 const holdBadge: CSSProperties = { ...badge, background: "#ede9fe", color: "#6d28d9" };
-const dangerBadge: CSSProperties = { ...badge, background: "#fee2e2", color: "#991b1b" };
-const successBadge: CSSProperties = { ...badge, background: "#dcfce7", color: "#166534" };
-const muted: CSSProperties = { color: "#9ca3af", fontSize: 13, fontWeight: 850 };
-const empty: CSSProperties = { border: "1px dashed #d1d5db", borderRadius: 8, padding: 18, textAlign: "center", color: "#6b7280", fontWeight: 900 };
+const dangerBadge: CSSProperties = { ...badge, background: "var(--asc-danger-soft)", color: "var(--asc-danger)" };
+const successBadge: CSSProperties = { ...badge, background: "var(--asc-success-soft)", color: "var(--asc-success)" };
+const muted: CSSProperties = { color: "var(--asc-text-muted)", fontSize: 13, fontWeight: 850 };
+const empty: CSSProperties = { border: "1px dashed var(--asc-border)", borderRadius: "var(--asc-radius-lg)", padding: 12, textAlign: "center", color: "var(--asc-text-muted)", fontWeight: 900 };
 const compactCalendar: CSSProperties = { display: "grid", gap: 8 };
 const compactCalendarHead: CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, fontSize: 13 };
 const weekHeaderGrid: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4, color: "#64748b", fontSize: 11, fontWeight: 950, textAlign: "center" };
 const compactGrid: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))", gap: 4 };
-const compactDay: CSSProperties = { minHeight: 76, border: "1px solid #e5e7eb", borderRadius: 7, padding: 5, display: "grid", alignContent: "start", gap: 4, background: "#fff" };
+const compactDay: CSSProperties = { minHeight: 68, border: "1px solid #e5e7eb", borderRadius: 7, padding: 4, display: "grid", alignContent: "start", gap: 3, background: "#fff" };
 const compactMutedDay: CSSProperties = { background: "#f8fafc", color: "#94a3b8" };
-const compactToday: CSSProperties = { border: "1px solid #2563eb", boxShadow: "inset 0 0 0 1px #2563eb" };
+const compactToday: CSSProperties = { border: "1px solid #0b50d0", boxShadow: "inset 0 0 0 1px #0b50d0" };
 const compactDayTop: CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 11 };
 const compactEvents: CSSProperties = { display: "grid", gap: 3, minWidth: 0 };
 const compactEvent: CSSProperties = { display: "block", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRadius: 5, padding: "3px 4px", color: "#fff", fontSize: 10, fontWeight: 900, textDecoration: "none" };

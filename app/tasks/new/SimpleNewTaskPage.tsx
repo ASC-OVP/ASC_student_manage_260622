@@ -141,15 +141,15 @@ function roleText(role: string) {
   return role;
 }
 
-const page: CSSProperties = { padding: 16, color: "#111827" };
-const card: CSSProperties = { width: "100%", maxWidth: "none", margin: 0, background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: 16 };
-const back: CSSProperties = { color: "#2563eb", fontWeight: 900, textDecoration: "none" };
-const title: CSSProperties = { fontSize: 25, fontWeight: 950, margin: "10px 0 6px" };
-const desc: CSSProperties = { margin: "0 0 18px", color: "#6b7280" };
+const page: CSSProperties = { padding: 16, color: "var(--asc-text)", background: "var(--asc-bg-subtle)", minHeight: "100vh" };
+const card: CSSProperties = { width: "100%", maxWidth: "none", margin: 0, background: "var(--asc-surface)", border: "1px solid var(--asc-border)", borderRadius: "var(--asc-radius-xl)", padding: 16 };
+const back: CSSProperties = { color: "var(--asc-primary-hover)", fontWeight: 900, textDecoration: "none" };
+const title: CSSProperties = { fontSize: 25, fontWeight: 950, margin: "10px 0 6px", color: "var(--asc-text)" };
+const desc: CSSProperties = { margin: "0 0 18px", color: "var(--asc-text-muted)" };
 const form: CSSProperties = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 };
-const label: CSSProperties = { display: "flex", flexDirection: "column", gap: 8, fontWeight: 900 };
-const input: CSSProperties = { padding: "12px", border: "1px solid #d1d5db", borderRadius: 8, background: "#fff", color: "#111827" };
-const colorField: CSSProperties = { border: "1px solid #d1d5db", borderRadius: 8, padding: 10, fontWeight: 900 };
+const label: CSSProperties = { display: "flex", flexDirection: "column", gap: 8, fontWeight: 900, color: "var(--asc-text-subtle)" };
+const input: CSSProperties = { padding: "12px", border: "1px solid var(--asc-border)", borderRadius: "var(--asc-radius-lg)", background: "var(--asc-bg)", color: "var(--asc-text)" };
+const colorField: CSSProperties = { border: "1px solid var(--asc-border)", borderRadius: "var(--asc-radius-lg)", padding: 10, fontWeight: 900 };
 const colorLegend: CSSProperties = { padding: "0 4px" };
 const colorGrid: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(118px, 1fr))", gap: 6, marginTop: 4 };
 const colorChoice: CSSProperties = {
@@ -164,11 +164,11 @@ const colorChoice: CSSProperties = {
   fontSize: 12,
   fontWeight: 850,
 };
-const assigneeField: CSSProperties = { gridColumn: "1 / -1", border: "1px solid #d1d5db", borderRadius: 8, padding: 12, fontWeight: 900 };
+const assigneeField: CSSProperties = { gridColumn: "1 / -1", border: "1px solid var(--asc-border)", borderRadius: "var(--asc-radius-lg)", padding: 12, fontWeight: 900 };
 const assigneeGrid: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 8, marginTop: 8 };
-const checkChip: CSSProperties = { display: "grid", gridTemplateColumns: "auto 1fr auto", alignItems: "center", gap: 8, border: "1px solid #e5e7eb", borderRadius: 8, padding: "9px 10px", background: "#f9fafb", fontSize: 13 };
-const btn: CSSProperties = { gridColumn: "1 / -1", background: "#111827", color: "#fff", border: 0, borderRadius: 8, padding: "12px", fontWeight: 950 };
-const error: CSSProperties = { background: "#fee2e2", color: "#991b1b", padding: 12, borderRadius: 8, fontWeight: 900 };
+const checkChip: CSSProperties = { display: "grid", gridTemplateColumns: "auto 1fr auto", alignItems: "center", gap: 8, border: "1px solid var(--asc-border)", borderRadius: "var(--asc-radius-lg)", padding: "9px 10px", background: "var(--asc-bg-subtle)", fontSize: 13 };
+const btn: CSSProperties = { gridColumn: "1 / -1", background: "var(--asc-primary)", color: "#fff", border: "1px solid var(--asc-primary)", borderRadius: "var(--asc-radius-lg)", padding: "12px", fontWeight: 950 };
+const error: CSSProperties = { background: "var(--asc-danger-soft)", color: "var(--asc-danger)", padding: 12, borderRadius: "var(--asc-radius-lg)", fontWeight: 900 };
 
 function colorChoiceDot(color: string): CSSProperties {
   return {

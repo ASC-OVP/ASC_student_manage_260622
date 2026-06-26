@@ -23,9 +23,9 @@ export default async function StaffPage() {
         <p style={desc}>실장, 강사, 조교 계정을 만들고 같은 소속 공간 안에서 학생·메모·업무를 공유합니다.</p>
 
         {manageable && (
-          <section style={{ ...card, marginBottom: 20 }}>
-            <h2 style={{ margin: "0 0 14px", fontSize: 20, fontWeight: 900 }}>계정 추가</h2>
-            <form action={createStaff} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 160px 110px", gap: 10, alignItems: "end" }}>
+          <section style={{ ...card, marginBottom: 12 }}>
+            <h2 style={{ margin: "0 0 8px", fontSize: 18, fontWeight: 900 }}>계정 추가</h2>
+            <form action={createStaff} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 150px 96px", gap: 8, alignItems: "end" }}>
               <label style={label}>이름<input name="name" required style={input} placeholder="예: 김조교" /></label>
               <label style={label}>아이디<input name="loginId" required style={input} placeholder="assistant01" /></label>
               <label style={label}>비밀번호<input name="password" type="password" required style={input} /></label>
@@ -35,7 +35,7 @@ export default async function StaffPage() {
           </section>
         )}
 
-        <div style={{ overflow: "auto", borderRadius: 14 }}>
+        <div style={{ overflow: "auto", borderRadius: 8 }}>
           <table style={excelTable}>
             <thead><tr><th style={excelTh}>이름</th><th style={excelTh}>아이디</th><th style={excelTh}>직위</th><th style={excelTh}>상태</th><th style={excelTh}>생성일</th><th style={excelTh}>관리</th></tr></thead>
             <tbody>
@@ -66,6 +66,6 @@ export default async function StaffPage() {
     </main>
   );
 }
-const label = { display: "flex", flexDirection: "column" as const, gap: 6, fontWeight: 900 };
-const miniLink = { display: "inline-block", marginRight: 8, padding: "7px 10px", borderRadius: 8, background: "#eef2ff", color: "#3730a3", fontWeight: 900, textDecoration: "none" };
-const miniDanger = { padding: "7px 10px", border: "none", borderRadius: 8, background: "#dc2626", color: "#fff", fontWeight: 900 };
+const label = { display: "flex", flexDirection: "column" as const, gap: 4, fontWeight: 900 };
+const miniLink = { display: "inline-block", marginRight: 6, padding: "6px 9px", borderRadius: "var(--asc-radius-lg)", background: "var(--asc-primary-soft)", color: "var(--asc-primary-hover)", fontWeight: 900, textDecoration: "none" };
+const miniDanger = { padding: "6px 9px", border: "1px solid var(--asc-danger)", borderRadius: "var(--asc-radius-lg)", background: "var(--asc-danger)", color: "#fff", fontWeight: 900 };

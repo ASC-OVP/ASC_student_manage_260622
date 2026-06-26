@@ -1,13 +1,21 @@
 import type { CSSProperties } from "react";
 import Link from "next/link";
 import { createStudent } from "../actions";
+import PhoneInput from "@/components/PhoneInput";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 const grades = ["중1", "중2", "중3", "고1", "고2", "고3", "N수"];
 
-export default async function NewStudentPage() {
+type Props = {
+  searchParams?: Promise<{
+    classGroupId?: string;
+  }>;
+};
+
+export default async function NewStudentPage({ searchParams }: Props) {
   const user = await requireUser();
+  const sp = (await searchParams) ?? {};
   const [staff, classGroups] = await Promise.all([
     prisma.user.findMany({
       where: { academyId: user.academyId, isActive: true },
@@ -23,6 +31,7 @@ export default async function NewStudentPage() {
     }),
   ]);
   const teachers = staff.filter((member) => member.role === "TEACHER" || member.role === "MANAGER" || member.role === "ADMIN");
+  const defaultClassGroupId = classGroups.some((classGroup) => classGroup.id === sp.classGroupId) ? sp.classGroupId ?? "" : "";
 
   return (
     <main style={page}>
@@ -32,7 +41,7 @@ export default async function NewStudentPage() {
         <form action={createStudent} style={form}>
           <label style={label}>이름<input name="name" required style={input} /></label>
           <label style={label}>소속 반
-            <select name="classGroupId" defaultValue="" style={input}>
+            <select name="classGroupId" defaultValue={defaultClassGroupId} style={input}>
               <option value="">미지정</option>
               {classGroups.map((classGroup) => (
                 <option key={classGroup.id} value={classGroup.id}>
@@ -41,8 +50,8 @@ export default async function NewStudentPage() {
               ))}
             </select>
           </label>
-          <label style={label}>학생 전화<input name="phone" style={input} /></label>
-          <label style={label}>보호자 전화<input name="parentPhone" style={input} /></label>
+          <label style={label}>학생 전화<PhoneInput name="phone" style={input} /></label>
+          <label style={label}>보호자 전화<PhoneInput name="parentPhone" style={input} /></label>
           <label style={label}>학교<input name="schoolName" placeholder="예: 대치고" style={input} /></label>
           <label style={label}>학년
             <select name="grade" defaultValue="고1" style={input}>
@@ -76,13 +85,13 @@ export default async function NewStudentPage() {
   );
 }
 
-const page: CSSProperties = { padding: 16, color: "#111827" };
-const card: CSSProperties = { width: "100%", maxWidth: "none", margin: 0, background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: 16, boxShadow: "0 8px 24px rgba(15,23,42,.06)" };
-const back: CSSProperties = { color: "#2563eb", fontWeight: 900, textDecoration: "none" };
-const title: CSSProperties = { fontSize: 25, fontWeight: 950 };
-const form: CSSProperties = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 };
-const label: CSSProperties = { display: "flex", flexDirection: "column", gap: 8, fontWeight: 900 };
-const input: CSSProperties = { padding: "12px", border: "1px solid #d1d5db", borderRadius: 10, background: "#fff" };
-const buttons: CSSProperties = { gridColumn: "1 / -1", display: "flex", gap: 10 };
-const btn: CSSProperties = { padding: "12px 18px", border: 0, borderRadius: 10, background: "#111827", color: "#fff", fontWeight: 950 };
-const cancel: CSSProperties = { padding: "12px 18px", border: "1px solid #d1d5db", borderRadius: 10, textDecoration: "none", fontWeight: 950 };
+const page: CSSProperties = { padding: 12, color: "var(--asc-text)", background: "var(--asc-bg-subtle)", minHeight: "100vh" };
+const card: CSSProperties = { width: "100%", maxWidth: "none", margin: 0, background: "var(--asc-surface)", border: "1px solid var(--asc-border)", borderRadius: "var(--asc-radius-lg)", padding: 14, boxShadow: "none" };
+const back: CSSProperties = { color: "var(--asc-primary-hover)", fontWeight: 900, textDecoration: "none" };
+const title: CSSProperties = { fontSize: 23, fontWeight: 950, color: "var(--asc-text)", margin: "8px 0 12px" };
+const form: CSSProperties = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 };
+const label: CSSProperties = { display: "flex", flexDirection: "column", gap: 5, fontWeight: 900, color: "var(--asc-text-subtle)", fontSize: 13 };
+const input: CSSProperties = { minHeight: 36, padding: "8px 10px", border: "1px solid var(--asc-border-strong)", borderRadius: "var(--asc-radius-lg)", background: "var(--asc-bg)", color: "var(--asc-text)" };
+const buttons: CSSProperties = { gridColumn: "1 / -1", display: "flex", gap: 8 };
+const btn: CSSProperties = { minHeight: 36, padding: "8px 14px", border: "1px solid var(--asc-primary)", borderRadius: "var(--asc-radius-lg)", background: "var(--asc-primary)", color: "#fff", fontWeight: 950 };
+const cancel: CSSProperties = { minHeight: 36, padding: "8px 14px", border: "1px solid var(--asc-border-strong)", borderRadius: "var(--asc-radius-lg)", textDecoration: "none", fontWeight: 950, color: "var(--asc-text)", background: "var(--asc-bg)" };

@@ -393,7 +393,7 @@ function cellSelectStyle(value: string): CSSProperties {
   }
 
   if (["지각", "영상", "보강", "부분"].includes(value)) {
-    return { ...base, backgroundColor: "#dbeafe", color: "#1d4ed8" };
+    return { ...base, backgroundColor: "#e8f0fe", color: "#083891" };
   }
 
   if (["결석", "미완료", "퇴원"].includes(value)) {
@@ -550,7 +550,7 @@ const emptyCellStyle: CSSProperties = {
 };
 
 const linkStyle: CSSProperties = {
-  color: "#2563eb",
+  color: "#083891",
   fontWeight: 900,
   textDecoration: "none",
 };

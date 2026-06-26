@@ -740,6 +740,67 @@ export async function updateTaskColorAction(formData: FormData) {
   revalidatePath("/calendar");
 }
 
+export async function updateTaskAssigneesAction(formData: FormData) {
+  const user = await requireUser();
+  const taskId = text(formData, "taskId");
+  const assigneeIds = assigneeIdsValue(formData);
+  if (!taskId || assigneeIds.length === 0) return;
+  if (user.role === "ASSISTANT") return;
+
+  const task = await getTaskForUser(taskId, user);
+  if (!task) return;
+  if (!reviewerScope(task, user)) return;
+
+  const assignees = await prisma.user.findMany({
+    where: {
+      id: { in: assigneeIds },
+      academyId: user.academyId,
+      isActive: true,
+      role: { in: ["ADMIN", "MANAGER", "TEACHER", "ASSISTANT"] },
+    },
+    select: { id: true, name: true },
+  });
+  const validAssigneeIds = assigneeIds.filter((id) => assignees.some((assignee) => assignee.id === id));
+  if (validAssigneeIds.length === 0) return;
+
+  const existingAssignments = await prisma.taskAssignee.findMany({
+    where: { taskId, academyId: user.academyId },
+    select: { assigneeId: true, color: true },
+  });
+  const colorByAssignee = new Map(existingAssignments.map((assignment) => [assignment.assigneeId, assignment.color]));
+
+  await prisma.$transaction(async (tx) => {
+    await tx.task.update({
+      where: { id: taskId },
+      data: { assigneeId: validAssigneeIds[0] },
+    });
+    await tx.taskAssignee.deleteMany({
+      where: { taskId, academyId: user.academyId },
+    });
+    await tx.taskAssignee.createMany({
+      data: validAssigneeIds.map((assigneeId) => ({
+        academyId: user.academyId,
+        taskId,
+        assigneeId,
+        color: colorByAssignee.get(assigneeId) ?? task.color ?? null,
+      })),
+    });
+  });
+
+  await recordActivity({
+    actor: user,
+    action: "UPDATE",
+    entityType: "Task",
+    entityId: taskId,
+    summary: `업무 담당 변경: ${assignees.map((assignee) => assignee.name).join(", ")}`,
+    metadata: { taskId, assigneeIds: validAssigneeIds },
+  });
+
+  revalidatePath("/tasks");
+  revalidatePath(`/tasks/${taskId}`);
+  revalidatePath("/calendar");
+}
+
 export async function deleteTaskAction(formData: FormData) {
   const user = await requireUser();
 

@@ -475,7 +475,7 @@ const secondaryButton: CSSProperties = { border: "1px solid #d1d5db", borderRadi
 const badge: CSSProperties = { display: "inline-flex", alignItems: "center", borderRadius: 999, padding: "3px 8px", background: "#f3f4f6", color: "#374151", fontWeight: 900, fontSize: 12 };
 const toneStyles: Record<Tone, CSSProperties> = {
   gray: { background: "#f3f4f6", color: "#374151" },
-  blue: { background: "#dbeafe", color: "#1d4ed8" },
+  blue: { background: "#e8f0fe", color: "#083891" },
   green: { background: "#dcfce7", color: "#047857" },
   yellow: { background: "#fef3c7", color: "#92400e" },
   red: { background: "#fee2e2", color: "#b91c1c" },
@@ -488,7 +488,7 @@ const studentNavButtons: CSSProperties = { display: "grid", gridTemplateColumns:
 const disabledNav: CSSProperties = { ...secondaryButton, opacity: .45, cursor: "default" };
 const reviewStudentList: CSSProperties = { display: "grid", gap: 4, overflow: "auto", paddingRight: 2, alignContent: "start" };
 const reviewStudentItem: CSSProperties = { border: "1px solid #e5e7eb", borderRadius: 7, padding: "6px 7px", textDecoration: "none", color: "#111827", background: "#fff", display: "grid", gap: 2 };
-const reviewStudentSelected: CSSProperties = { borderColor: "#2563eb", boxShadow: "inset 3px 0 0 #2563eb", background: "#eff6ff" };
+const reviewStudentSelected: CSSProperties = { borderColor: "#0b50d0", boxShadow: "inset 3px 0 0 #0b50d0", background: "#e8f0fe" };
 const reviewStudentNeedsReview: CSSProperties = { background: "#fffbeb" };
 const reviewStudentHeader: CSSProperties = { display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 6, alignItems: "center" };
 const reviewStudentName: CSSProperties = { minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12, fontWeight: 950 };
@@ -500,11 +500,11 @@ const lowQuestionItem: CSSProperties = { display: "inline-flex", alignItems: "ce
 const reviewInlineForms: CSSProperties = { display: "grid", gap: 6, marginTop: 8 };
 const reviewInlineForm: CSSProperties = { display: "grid", gridTemplateColumns: "minmax(100px, 1fr) minmax(130px, 1.15fr) auto", gap: 6, alignItems: "center" };
 const answerReviewForm: CSSProperties = { ...card, display: "grid", gap: 8, minHeight: 0 };
-const reviewTableWrap: CSSProperties = { ...tableWrap, maxHeight: "calc(100vh - 430px)", minHeight: 260 };
+const reviewTableWrap: CSSProperties = { ...tableWrap, maxHeight: "calc(100vh - 410px)", minHeight: 220 };
 const reviewFooter: CSSProperties = { display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: 8, alignItems: "center" };
 const miniInput: CSSProperties = { border: "1px solid #d1d5db", borderRadius: 6, padding: "6px 7px", minWidth: 0, fontSize: 12 };
 const dangerText: CSSProperties = { color: "#b91c1c", fontWeight: 800 };
 const correctPill: CSSProperties = { ...badge, background: "#dcfce7", color: "#047857" };
 const wrongPill: CSSProperties = { ...badge, background: "#fee2e2", color: "#b91c1c" };
-const emptyBox: CSSProperties = { border: "1px dashed #d1d5db", borderRadius: 8, padding: 28, textAlign: "center", color: "#6b7280" };
+const emptyBox: CSSProperties = { border: "1px dashed #d1d5db", borderRadius: 8, padding: 16, textAlign: "center", color: "#6b7280" };
 const reviewRow: CSSProperties = { background: "#fffbeb" };

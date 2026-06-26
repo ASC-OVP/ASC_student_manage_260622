@@ -11,6 +11,7 @@ const menus = [
   { name: "\uCE98\uB9B0\uB354", href: "/calendar", icon: "calendar" },
   { name: "\uBA54\uBAA8 \uAD00\uB9AC", href: "/memos", icon: "memos" },
   { name: "\uC5C5\uBB34 \uAD00\uB9AC", href: "/tasks", icon: "tasks" },
+  { name: "\uBB38\uC790 \uBC1C\uC1A1", href: "/messages", icon: "messages" },
   { name: "\uADFC\uBB34/\uAE09\uC5EC", href: "/work", icon: "work" },
   { name: "OMR \uAC80\uC0AC", href: "/omr", icon: "omr" },
   { name: "\uC6B4\uC601 \uC548\uC815\uD654", href: "/operations", icon: "operations" },
@@ -62,6 +63,7 @@ export default function Sidebar({ academyName, userName, role, collapsed = false
               className="sidebar-link"
               title={collapsed ? menu.name : undefined}
               aria-label={menu.name}
+              aria-current={active ? "page" : undefined}
               onMouseDown={(event) => event.currentTarget.blur()}
               onClick={(event) => event.currentTarget.blur()}
               style={{ ...menuStyle, ...(collapsed ? menuCollapsedStyle : {}), ...(active ? activeStyle : {}) }}
@@ -148,6 +150,15 @@ function renderMenuIcon(icon: MenuIconName) {
         <path d="M4 17h2" />
       </>
     ),
+    messages: (
+      <>
+        <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" />
+        <path d="M8 9h8" />
+        <path d="M8 13h5" />
+        <path d="M15 13l3-3" />
+        <path d="M18 10v4h-4" />
+      </>
+    ),
     work: (
       <>
         <circle cx="12" cy="12" r="9" />
@@ -201,36 +212,36 @@ function formatRole(role: string) {
 }
 
 const sidebarStyle: CSSProperties = {
-  width: 236,
+  width: 220,
   minHeight: "100vh",
-  background: "#111827",
-  color: "#fff",
-  padding: "16px 12px",
+  background: "var(--asc-sidebar-bg)",
+  color: "var(--asc-sidebar-active-text)",
+  padding: "14px 10px",
   position: "fixed",
   left: 0,
   top: 0,
   zIndex: 10,
   display: "flex",
   flexDirection: "column",
-  transition: "width 160ms ease, padding 160ms ease",
+  transition: "width 180ms ease, padding 180ms ease",
   borderRight: "1px solid rgba(255,255,255,.08)",
 };
-const sidebarCollapsedStyle: CSSProperties = { width: 64, padding: "12px 8px" };
-const brandStyle: CSSProperties = { position: "relative", minHeight: 58, padding: "4px 34px 14px 6px", display: "flex", alignItems: "center" };
-const brandCollapsedStyle: CSSProperties = { position: "relative", minHeight: 42, padding: "0 0 10px", display: "grid", placeItems: "center" };
+const sidebarCollapsedStyle: CSSProperties = { width: 56, padding: "10px 7px" };
+const brandStyle: CSSProperties = { position: "relative", minHeight: 52, padding: "2px 32px 10px 6px", display: "flex", alignItems: "center" };
+const brandCollapsedStyle: CSSProperties = { position: "relative", minHeight: 36, padding: "0 0 8px", display: "grid", placeItems: "center" };
 const brandText: CSSProperties = { minWidth: 0 };
-const logoStyle: CSSProperties = { fontSize: 28, fontWeight: 950, letterSpacing: 0 };
-const subStyle: CSSProperties = { color: "#9ca3af", fontSize: 12, marginTop: 3, fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
+const logoStyle: CSSProperties = { fontSize: 27, fontWeight: 950, letterSpacing: 0, color: "var(--asc-sidebar-active-text)" };
+const subStyle: CSSProperties = { color: "var(--asc-sidebar-muted)", fontSize: 12, marginTop: 3, fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
 const toggleStyle: CSSProperties = {
   position: "absolute",
   right: 6,
   top: 7,
   width: 26,
   height: 26,
-  border: "1px solid rgba(255,255,255,.2)",
-  borderRadius: 7,
+  border: "1px solid rgba(255,255,255,.22)",
+  borderRadius: 8,
   background: "rgba(255,255,255,.08)",
-  color: "#fff",
+  color: "var(--asc-sidebar-active-text)",
   fontWeight: 950,
   cursor: "pointer",
 };
@@ -239,31 +250,31 @@ const menuStyle: CSSProperties = {
   display: "flex",
   alignItems: "center",
   gap: 10,
-  padding: "10px 12px",
+  padding: "9px 10px",
   borderRadius: 8,
-  color: "#d1d5db",
+  color: "var(--asc-sidebar-text)",
   textDecoration: "none",
   fontWeight: 850,
-  border: "none",
+  border: 0,
   outline: "none",
   boxShadow: "none",
 };
-const menuCollapsedStyle: CSSProperties = { justifyContent: "center", gap: 0, padding: "9px 0" };
-const activeStyle: CSSProperties = { background: "#1d4ed8", color: "#fff" };
+const menuCollapsedStyle: CSSProperties = { justifyContent: "center", gap: 0, padding: "8px 0" };
+const activeStyle: CSSProperties = { background: "var(--asc-sidebar-active-bg)", color: "var(--asc-sidebar-active-text)" };
 const iconStyle: CSSProperties = {
-  width: 22,
-  height: 22,
+  width: 21,
+  height: 21,
   borderRadius: 7,
   display: "inline-grid",
   placeItems: "center",
   background: "rgba(255,255,255,.08)",
-  color: "#cbd5e1",
+  color: "var(--asc-sidebar-text)",
   flex: "0 0 auto",
 };
-const activeIconStyle: CSSProperties = { background: "rgba(255,255,255,.18)", color: "#fff" };
+const activeIconStyle: CSSProperties = { background: "var(--asc-primary)", color: "#fff" };
 const svgIconStyle: CSSProperties = {
-  width: 18,
-  height: 18,
+  width: 17,
+  height: 17,
   display: "block",
   fill: "none",
   stroke: "currentColor",
@@ -274,7 +285,7 @@ const svgIconStyle: CSSProperties = {
 const menuTextStyle: CSSProperties = { whiteSpace: "nowrap" };
 const bottomStyle: CSSProperties = { marginTop: "auto", padding: "12px 6px" };
 const bottomCollapsedStyle: CSSProperties = { marginTop: "auto", padding: "8px 0", display: "grid", placeItems: "center" };
-const userStyle: CSSProperties = { display: "flex", flexDirection: "column", gap: 4, color: "#d1d5db", fontSize: 13, padding: "0 6px 10px" };
-const logoutStyle: CSSProperties = { display: "flex", alignItems: "center", gap: 10, color: "#fecaca", textDecoration: "none", fontWeight: 900, padding: "9px 6px", outline: "none", boxShadow: "none" };
-const logoutIconStyle: CSSProperties = { ...iconStyle, background: "rgba(254,202,202,.1)", color: "#fecaca" };
+const userStyle: CSSProperties = { display: "flex", flexDirection: "column", gap: 4, color: "var(--asc-sidebar-text)", fontSize: 13, padding: "0 6px 10px" };
+const logoutStyle: CSSProperties = { display: "flex", alignItems: "center", gap: 10, color: "#fecaca", textDecoration: "none", fontWeight: 900, padding: "9px 6px", outline: "none", boxShadow: "none", borderRadius: 8 };
+const logoutIconStyle: CSSProperties = { ...iconStyle, background: "rgba(222,52,18,.12)", color: "#fecaca" };
 const logoutCollapsedStyle: CSSProperties = { ...logoutStyle, width: 32, justifyContent: "center", padding: 7, borderRadius: 8, background: "rgba(255,255,255,.06)" };

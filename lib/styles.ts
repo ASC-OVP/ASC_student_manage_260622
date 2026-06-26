@@ -2,7 +2,7 @@ import type { CSSProperties } from "react";
 
 export const page: CSSProperties = {
   minHeight: "100vh",
-  padding: 16,
+  padding: 12,
   color: "#111827",
 };
 
@@ -22,36 +22,38 @@ export const header: CSSProperties = {
   display: "flex",
   alignItems: "center",
   justifyContent: "space-between",
-  gap: 16,
-  marginBottom: 22,
+  gap: 12,
+  marginBottom: 14,
 };
 
 export const title: CSSProperties = {
-  fontSize: 26,
+  fontSize: 24,
   fontWeight: 900,
-  margin: "0 0 8px",
+  margin: "0 0 4px",
 };
 
 export const desc: CSSProperties = {
   margin: 0,
   color: "#6b7280",
+  fontSize: 13,
 };
 
 export const card: CSSProperties = {
   background: "#ffffff",
   border: "1px solid #e5e7eb",
-  borderRadius: 18,
-  padding: 14,
-  boxShadow: "0 8px 20px rgba(15,23,42,.06)",
+  borderRadius: 8,
+  padding: 12,
+  boxShadow: "none",
 };
 
 export const button: CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
   justifyContent: "center",
-  padding: "11px 16px",
+  minHeight: 36,
+  padding: "8px 12px",
   border: "none",
-  borderRadius: 10,
+  borderRadius: 8,
   background: "#111827",
   color: "#ffffff",
   fontWeight: 900,
@@ -73,9 +75,10 @@ export const dangerButton: CSSProperties = {
 
 export const input: CSSProperties = {
   width: "100%",
-  padding: "12px",
+  minHeight: 36,
+  padding: "8px 10px",
   border: "1px solid #d1d5db",
-  borderRadius: 10,
+  borderRadius: 8,
   background: "#ffffff",
   color: "#111827",
 };
@@ -83,20 +86,20 @@ export const input: CSSProperties = {
 export const label: CSSProperties = {
   display: "flex",
   flexDirection: "column",
-  gap: 8,
+  gap: 5,
   fontWeight: 800,
 };
 
 export const form: CSSProperties = {
   display: "flex",
   flexDirection: "column",
-  gap: 16,
+  gap: 10,
 };
 
 export const backLink: CSSProperties = {
   display: "inline-block",
-  marginBottom: 16,
-  color: "#2563eb",
+  marginBottom: 10,
+  color: "var(--asc-primary-deep)",
   fontWeight: 800,
   textDecoration: "none",
 };
@@ -104,9 +107,9 @@ export const backLink: CSSProperties = {
 export const excelWrap: CSSProperties = {
   background: "#ffffff",
   border: "1px solid #d1d5db",
-  borderRadius: 14,
+  borderRadius: 8,
   overflow: "auto",
-  boxShadow: "0 8px 20px rgba(15,23,42,.06)",
+  boxShadow: "none",
 };
 
 export const table: CSSProperties = {
@@ -116,7 +119,7 @@ export const table: CSSProperties = {
 };
 
 export const th: CSSProperties = {
-  padding: "12px 14px",
+  padding: "8px 10px",
   background: "#f3f4f6",
   border: "1px solid #d1d5db",
   textAlign: "left",
@@ -125,7 +128,7 @@ export const th: CSSProperties = {
 };
 
 export const td: CSSProperties = {
-  padding: "11px 14px",
+  padding: "8px 10px",
   border: "1px solid #e5e7eb",
   verticalAlign: "top",
 };

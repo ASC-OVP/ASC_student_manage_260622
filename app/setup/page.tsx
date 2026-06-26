@@ -54,7 +54,7 @@ const page: CSSProperties = {
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
-  background: "linear-gradient(135deg,#2563eb,#7c3aed)",
+  background: "linear-gradient(135deg,#083891,#312e81)",
   color: "#111827",
   padding: 24,
 };
@@ -73,4 +73,4 @@ const label: CSSProperties = { display: "flex", flexDirection: "column", gap: 8,
 const input: CSSProperties = { padding: "12px", border: "1px solid #d1d5db", borderRadius: 12 };
 const button: CSSProperties = { padding: "13px", border: 0, borderRadius: 12, background: "#111827", color: "#fff", fontWeight: 950 };
 const error: CSSProperties = { background: "#fee2e2", color: "#991b1b", padding: 12, borderRadius: 12, fontWeight: 900 };
-const link: CSSProperties = { display: "block", marginTop: 16, textAlign: "center", color: "#2563eb", fontWeight: 950, textDecoration: "none" };
+const link: CSSProperties = { display: "block", marginTop: 16, textAlign: "center", color: "var(--asc-primary-deep)", fontWeight: 950, textDecoration: "none" };

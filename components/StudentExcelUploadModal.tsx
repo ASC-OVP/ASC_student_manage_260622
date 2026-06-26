@@ -4,6 +4,7 @@ import type { CSSProperties, ChangeEvent, ClipboardEvent } from "react";
 import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createStudentsFromExcelUpload } from "@/app/students/actions";
+import { formatPhoneNumber, normalizePhoneNumber, phoneLastDigits } from "@/lib/phone";
 
 type UploadField = "unused" | "name" | "phone" | "parentPhone" | "schoolName" | "grade" | "subject" | "currentLevel" | "memo" | "classGroupName";
 
@@ -100,7 +101,7 @@ export default function StudentExcelUploadModal({ classGroups, existingStudents,
     setRows((current) => {
       const next = ensureRowCount(current, rowIndex + 1, columns.length);
       next[rowIndex] = ensureColumnCount(next[rowIndex], columns.length);
-      next[rowIndex][colIndex] = value.slice(0, 1000);
+      next[rowIndex][colIndex] = normalizeUploadCell(columns[colIndex]?.field, value);
       return next;
     });
     setResult("");
@@ -114,8 +115,9 @@ export default function StudentExcelUploadModal({ classGroups, existingStudents,
     const matrix = rowIndex === 0 && looksLikeHeader(rawMatrix[0]) ? rawMatrix.slice(1) : rawMatrix;
     if (matrix.length === 0) return;
     const requiredColumnCount = Math.max(columns.length, colIndex + Math.max(...matrix.map((row) => row.length)));
-    setColumns((current) => ensureUploadColumnCount(current, requiredColumnCount));
-    setRows((current) => pasteMatrix(current, matrix, rowIndex, colIndex, requiredColumnCount));
+    const nextColumns = ensureUploadColumnCount(columns, requiredColumnCount);
+    setColumns(nextColumns);
+    setRows((current) => pasteMatrix(current, matrix, rowIndex, colIndex, nextColumns));
     setMessage(`${matrix.length}개 행을 붙여넣었습니다. 열 매핑과 검증 결과를 확인한 뒤 등록하세요.`);
     setResult("");
   }
@@ -129,6 +131,15 @@ export default function StudentExcelUploadModal({ classGroups, existingStudents,
         return column;
       })
     );
+    if (field === "phone" || field === "parentPhone") {
+      setRows((current) =>
+        current.map((row) => {
+          const next = ensureColumnCount(row, columns.length);
+          next[columnIndex] = normalizeUploadCell(field, next[columnIndex] ?? "");
+          return next;
+        })
+      );
+    }
     if (hadDuplicate) {
       setMessage(`${fieldLabel(field)}은 한 열에만 매핑됩니다. 기존에 선택된 열은 '사용 안 함'으로 바꿨습니다.`);
     }
@@ -202,8 +213,9 @@ export default function StudentExcelUploadModal({ classGroups, existingStudents,
     const matrix = parseCsv(text);
     const withoutHeader = looksLikeHeader(matrix[0]) ? matrix.slice(1) : matrix;
     const columnCount = Math.max(defaultUploadFields.length, ...withoutHeader.map((row) => row.length), 1);
-    setColumns(ensureUploadColumnCount(createDefaultColumns(), columnCount));
-    setRows(rowsFromMatrix(withoutHeader, columnCount));
+    const nextColumns = ensureUploadColumnCount(createDefaultColumns(), columnCount);
+    setColumns(nextColumns);
+    setRows(rowsFromMatrix(withoutHeader, nextColumns));
     setSelectedRows(new Set());
     setMessage(`${file.name} 파일을 불러왔습니다. 열 매핑과 검증 결과를 확인하세요.`);
     setResult("");
@@ -427,7 +439,7 @@ function parseUploadRow(row: string[], columns: UploadColumn[]): ParsedUploadRow
   columns.forEach((column, index) => {
     if (column.field === "unused") return;
     const field = column.field as keyof ParsedUploadRow;
-    const value = getCell(row, index).trim();
+    const value = normalizeUploadCell(column.field, getCell(row, index));
     if (!parsed[field]) parsed[field] = value;
   });
   return parsed;
@@ -451,6 +463,8 @@ function validateRows(parsedRows: ParsedUploadRow[], activeIndexes: number[], ex
 
     const phoneDigits = digits(row.phone);
     const parentDigits = digits(row.parentPhone);
+    const phoneLast8 = phoneLastDigits(row.phone);
+    const parentLast8 = phoneLastDigits(row.parentPhone);
     if (row.phone.trim() && phoneDigits.length < 8) warnings.push("학생 연락처 확인");
     if (row.parentPhone.trim() && parentDigits.length < 8) warnings.push("보호자 연락처 확인");
 
@@ -459,8 +473,8 @@ function validateRows(parsedRows: ParsedUploadRow[], activeIndexes: number[], ex
       const studentPhone = digits(student.phone);
       const existingParentPhone = digits(student.parentPhone);
       return Boolean(
-        (phoneDigits && (studentPhone.endsWith(phoneDigits.slice(-8)) || existingParentPhone.endsWith(phoneDigits.slice(-8)))) ||
-          (parentDigits && (studentPhone.endsWith(parentDigits.slice(-8)) || existingParentPhone.endsWith(parentDigits.slice(-8))))
+        (phoneLast8 && (studentPhone.endsWith(phoneLast8) || existingParentPhone.endsWith(phoneLast8))) ||
+          (parentLast8 && (studentPhone.endsWith(parentLast8) || existingParentPhone.endsWith(parentLast8)))
       );
     });
     if (existingDuplicate) warnings.push(`기존 학생 중복 가능: ${existingDuplicate.name}`);
@@ -469,25 +483,27 @@ function validateRows(parsedRows: ParsedUploadRow[], activeIndexes: number[], ex
   });
 }
 
-function pasteMatrix(rows: string[][], matrix: string[][], startRow: number, startCol: number, columnCount: number) {
+function pasteMatrix(rows: string[][], matrix: string[][], startRow: number, startCol: number, columns: UploadColumn[]) {
+  const columnCount = columns.length;
   const next = ensureRowCount(rows, startRow + matrix.length + 4, columnCount);
   matrix.forEach((matrixRow, rowOffset) => {
     const targetIndex = startRow + rowOffset;
     const target = ensureColumnCount(next[targetIndex], columnCount);
     matrixRow.forEach((value, colOffset) => {
       const targetCol = startCol + colOffset;
-      if (targetCol < columnCount) target[targetCol] = value.trim().slice(0, 1000);
+      if (targetCol < columnCount) target[targetCol] = normalizeUploadCell(columns[targetCol]?.field, value);
     });
     next[targetIndex] = target;
   });
   return next;
 }
 
-function rowsFromMatrix(matrix: string[][], columnCount: number) {
+function rowsFromMatrix(matrix: string[][], columns: UploadColumn[]) {
+  const columnCount = columns.length;
   const rows = matrix.map((matrixRow) => {
     const row = blankRow(columnCount);
     matrixRow.forEach((value, index) => {
-      if (index < columnCount) row[index] = String(value ?? "").trim();
+      if (index < columnCount) row[index] = normalizeUploadCell(columns[index]?.field, String(value ?? ""));
     });
     return row;
   });
@@ -538,46 +554,51 @@ function csvEscape(value: string) {
 }
 
 function digits(value: string) {
-  return value.replace(/\D/g, "");
+  return normalizePhoneNumber(value);
+}
+
+function normalizeUploadCell(field: UploadField | undefined, value: string) {
+  const trimmed = String(value ?? "").trim().slice(0, 1000);
+  return field === "phone" || field === "parentPhone" ? formatPhoneNumber(trimmed) : trimmed;
 }
 
 function normalizeText(value: string) {
   return value.trim().replace(/\s+/g, " ").toLocaleLowerCase();
 }
 
-const uploadButton: CSSProperties = { height: 30, display: "inline-flex", alignItems: "center", border: "1px solid #cbd5e1", background: "#fff", color: "#111827", borderRadius: 7, padding: "0 11px", fontSize: 13, fontWeight: 900, whiteSpace: "nowrap", cursor: "pointer" };
+const uploadButton: CSSProperties = { height: 30, display: "inline-flex", alignItems: "center", border: "1px solid var(--asc-primary)", background: "var(--asc-primary-soft)", color: "var(--asc-primary-hover)", borderRadius: "var(--asc-radius-md)", padding: "0 11px", fontSize: 13, fontWeight: 900, whiteSpace: "nowrap", cursor: "pointer" };
 const overlay: CSSProperties = { position: "fixed", inset: 0, zIndex: 80, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 };
-const modal: CSSProperties = { width: "min(1360px, 96vw)", maxHeight: "92vh", background: "#fff", border: "1px solid #dbe3ef", borderRadius: 12, boxShadow: "0 24px 60px rgba(15,23,42,.25)", display: "grid", gridTemplateRows: "auto auto auto minmax(320px, 1fr) auto", overflow: "hidden" };
-const modalHeader: CSSProperties = { display: "flex", justifyContent: "space-between", gap: 16, padding: "16px 18px 10px", borderBottom: "1px solid #e5e7eb" };
-const modalTitle: CSSProperties = { margin: 0, fontSize: 22, fontWeight: 950 };
-const modalDesc: CSSProperties = { margin: "6px 0 0", color: "#64748b", fontSize: 13, fontWeight: 700 };
-const iconButton: CSSProperties = { width: 32, height: 32, border: "1px solid #cbd5e1", borderRadius: 8, background: "#fff", fontSize: 22, cursor: "pointer" };
-const toolbar: CSSProperties = { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", padding: "10px 18px", borderBottom: "1px solid #eef2f7" };
-const classSelectLabel: CSSProperties = { display: "inline-flex", alignItems: "center", gap: 8, color: "#111827", fontSize: 13, fontWeight: 900 };
-const classSelect: CSSProperties = { height: 32, minWidth: 230, border: "1px solid #cbd5e1", borderRadius: 8, background: "#fff", padding: "0 10px", color: "#111827", fontSize: 13, fontWeight: 800 };
-const secondaryButton: CSSProperties = { height: 32, border: "1px solid #cbd5e1", borderRadius: 8, background: "#fff", padding: "0 12px", fontWeight: 900, cursor: "pointer" };
-const hintText: CSSProperties = { color: "#64748b", fontSize: 12, fontWeight: 700 };
-const summaryBar: CSSProperties = { display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", padding: "8px 18px", borderBottom: "1px solid #e5e7eb", fontSize: 13 };
-const successText: CSSProperties = { color: "#15803d" };
-const sheetWrap: CSSProperties = { overflow: "auto", background: "#f8fafc" };
-const sheetTable: CSSProperties = { borderCollapse: "collapse", minWidth: 1100, width: "100%", fontSize: 12, background: "#fff" };
-const rowHeader: CSSProperties = { position: "sticky", left: 0, zIndex: 2, width: 74, minWidth: 74, border: "1px solid #dbe3ef", background: "#f1f5f9", color: "#475569", textAlign: "center", fontWeight: 900 };
-const th: CSSProperties = { height: 58, border: "1px solid #dbe3ef", background: "#eef4ff", color: "#111827", fontWeight: 950, textAlign: "center", padding: 4 };
-const columnNumber: CSSProperties = { color: "#64748b", fontSize: 11, fontWeight: 900 };
-const mappingSelect: CSSProperties = { width: "100%", height: 26, border: "1px solid #cbd5e1", borderRadius: 6, background: "#fff", color: "#111827", fontSize: 12, fontWeight: 800 };
-const duplicateSelect: CSSProperties = { borderColor: "#f59e0b", background: "#fffbeb" };
-const actionHeader: CSSProperties = { ...th, minWidth: 62, background: "#f8fafc" };
-const td: CSSProperties = { border: "1px solid #e2e8f0", padding: 0, height: 32, background: "inherit" };
-const actionTd: CSSProperties = { border: "1px solid #e2e8f0", padding: 4, textAlign: "center", background: "inherit" };
+const modal: CSSProperties = { width: "min(1360px, 96vw)", maxHeight: "92vh", background: "var(--asc-surface)", border: "1px solid var(--asc-border)", borderRadius: "var(--asc-radius-xl)", boxShadow: "var(--asc-shadow-modal)", display: "grid", gridTemplateRows: "auto auto auto minmax(320px, 1fr) auto", overflow: "hidden" };
+const modalHeader: CSSProperties = { display: "flex", justifyContent: "space-between", gap: 16, padding: "16px 18px 10px", borderBottom: "1px solid var(--asc-border)" };
+const modalTitle: CSSProperties = { margin: 0, fontSize: 22, fontWeight: 950, color: "var(--asc-text)" };
+const modalDesc: CSSProperties = { margin: "6px 0 0", color: "var(--asc-text-muted)", fontSize: 13, fontWeight: 700 };
+const iconButton: CSSProperties = { width: 32, height: 32, border: "1px solid var(--asc-border)", borderRadius: "var(--asc-radius-lg)", background: "var(--asc-bg)", fontSize: 22, cursor: "pointer", color: "var(--asc-text)" };
+const toolbar: CSSProperties = { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", padding: "10px 18px", borderBottom: "1px solid var(--asc-border)" };
+const classSelectLabel: CSSProperties = { display: "inline-flex", alignItems: "center", gap: 8, color: "var(--asc-text)", fontSize: 13, fontWeight: 900 };
+const classSelect: CSSProperties = { height: 32, minWidth: 230, border: "1px solid var(--asc-border-strong)", borderRadius: "var(--asc-radius-lg)", background: "var(--asc-bg)", padding: "0 10px", color: "var(--asc-text)", fontSize: 13, fontWeight: 800 };
+const secondaryButton: CSSProperties = { height: 32, border: "1px solid var(--asc-border-strong)", borderRadius: "var(--asc-radius-lg)", background: "var(--asc-bg)", color: "var(--asc-text)", padding: "0 12px", fontWeight: 900, cursor: "pointer" };
+const hintText: CSSProperties = { color: "var(--asc-text-muted)", fontSize: 12, fontWeight: 700 };
+const summaryBar: CSSProperties = { display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", padding: "8px 18px", borderBottom: "1px solid var(--asc-border)", fontSize: 13 };
+const successText: CSSProperties = { color: "var(--asc-success)" };
+const sheetWrap: CSSProperties = { overflow: "auto", background: "var(--asc-bg-subtle)" };
+const sheetTable: CSSProperties = { borderCollapse: "collapse", minWidth: 1100, width: "100%", fontSize: 12, background: "var(--asc-bg)" };
+const rowHeader: CSSProperties = { position: "sticky", left: 0, zIndex: 2, width: 74, minWidth: 74, border: "1px solid var(--asc-border)", background: "var(--asc-bg-subtle)", color: "var(--asc-text-subtle)", textAlign: "center", fontWeight: 900 };
+const th: CSSProperties = { height: 58, border: "1px solid var(--asc-border)", background: "var(--asc-primary-soft)", color: "var(--asc-text)", fontWeight: 950, textAlign: "center", padding: 4 };
+const columnNumber: CSSProperties = { color: "var(--asc-text-muted)", fontSize: 11, fontWeight: 900 };
+const mappingSelect: CSSProperties = { width: "100%", height: 26, border: "1px solid var(--asc-border)", borderRadius: "var(--asc-radius-md)", background: "var(--asc-bg)", color: "var(--asc-text)", fontSize: 12, fontWeight: 800 };
+const duplicateSelect: CSSProperties = { borderColor: "var(--asc-warning)", background: "var(--asc-warning-soft)" };
+const actionHeader: CSSProperties = { ...th, minWidth: 62, background: "var(--asc-bg-subtle)" };
+const td: CSSProperties = { border: "1px solid var(--asc-border)", padding: 0, height: 32, background: "inherit" };
+const actionTd: CSSProperties = { border: "1px solid var(--asc-border)", padding: 4, textAlign: "center", background: "inherit" };
 const cellInput: CSSProperties = { width: "100%", height: 31, border: 0, outline: 0, padding: "0 7px", boxSizing: "border-box", background: "transparent", fontSize: 12 };
 const rowNumber: CSSProperties = { display: "inline-block", minWidth: 18, marginLeft: 4 };
-const errorRow: CSSProperties = { background: "#fff1f2" };
-const warningRow: CSSProperties = { background: "#fffbeb" };
-const errorText: CSSProperties = { color: "#b91c1c", fontWeight: 900, lineHeight: 1.6 };
-const errorBadge: CSSProperties = { marginLeft: 4, color: "#b91c1c", fontSize: 10, fontWeight: 950 };
-const warningBadge: CSSProperties = { marginLeft: 4, color: "#92400e", fontSize: 10, fontWeight: 950 };
-const dangerSmallButton: CSSProperties = { height: 24, border: "1px solid #fecaca", borderRadius: 6, background: "#fff1f2", color: "#b91c1c", padding: "0 8px", fontSize: 11, fontWeight: 900, cursor: "pointer" };
-const modalFooter: CSSProperties = { display: "flex", justifyContent: "flex-end", gap: 8, padding: 14, borderTop: "1px solid #e5e7eb", background: "#fff" };
-const ghostButton: CSSProperties = { height: 34, border: 0, background: "transparent", padding: "0 12px", fontWeight: 900, cursor: "pointer" };
-const primaryButton: CSSProperties = { height: 34, border: 0, borderRadius: 8, background: "#111827", color: "#fff", padding: "0 14px", fontWeight: 950, cursor: "pointer" };
+const errorRow: CSSProperties = { background: "var(--asc-danger-soft)" };
+const warningRow: CSSProperties = { background: "var(--asc-warning-soft)" };
+const errorText: CSSProperties = { color: "var(--asc-danger)", fontWeight: 900, lineHeight: 1.6 };
+const errorBadge: CSSProperties = { marginLeft: 4, color: "var(--asc-danger)", fontSize: 10, fontWeight: 950 };
+const warningBadge: CSSProperties = { marginLeft: 4, color: "var(--asc-warning-text)", fontSize: 10, fontWeight: 950 };
+const dangerSmallButton: CSSProperties = { height: 24, border: "1px solid var(--asc-danger)", borderRadius: "var(--asc-radius-md)", background: "var(--asc-danger-soft)", color: "var(--asc-danger)", padding: "0 8px", fontSize: 11, fontWeight: 900, cursor: "pointer" };
+const modalFooter: CSSProperties = { display: "flex", justifyContent: "flex-end", gap: 8, padding: 14, borderTop: "1px solid var(--asc-border)", background: "var(--asc-bg)" };
+const ghostButton: CSSProperties = { height: 34, border: 0, background: "transparent", color: "var(--asc-text)", padding: "0 12px", fontWeight: 900, cursor: "pointer" };
+const primaryButton: CSSProperties = { height: 34, border: "1px solid var(--asc-primary)", borderRadius: "var(--asc-radius-lg)", background: "var(--asc-primary)", color: "#fff", padding: "0 14px", fontWeight: 950, cursor: "pointer" };
 const disabledButton: CSSProperties = { opacity: 0.45, cursor: "not-allowed" };

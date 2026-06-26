@@ -81,7 +81,6 @@ export default async function StudentsPage({ searchParams }: Props) {
       attendanceRecords: { orderBy: { date: "desc" }, select: { date: true, status: true } },
       assignmentRecords: { orderBy: [{ date: "desc" }, { updatedAt: "desc" }], select: { date: true, status: true, score: true, title: true } },
       scoreRecords: { orderBy: [{ date: "desc" }, { updatedAt: "desc" }], select: { date: true, title: true, score: true, maxScore: true } },
-      memos: { orderBy: [{ isImportant: "desc" }, { createdAt: "desc" }], take: 1 },
       studentClasses: {
         orderBy: [{ isPrimary: "desc" }, { createdAt: "desc" }],
         include: { classGroup: { select: { id: true, name: true } } },
@@ -111,7 +110,7 @@ export default async function StudentsPage({ searchParams }: Props) {
       classGroupName: primaryClass?.classGroup?.name ?? "",
       subject: student.subject ?? "",
       currentLevel: student.currentLevel ?? "",
-      memo: student.memos[0]?.content ?? student.memo ?? "",
+      memo: student.memo ?? "",
       attendance: sheetOptionLabel(optionSettings.attendanceOptions, attendanceStatus),
       assignment: sheetOptionLabel(optionSettings.assignmentOptions, assignmentStatus),
       assignmentScore: assignment?.score ?? null,
@@ -155,7 +154,12 @@ export default async function StudentsPage({ searchParams }: Props) {
                 defaultClassGroupId={effectiveClassGroupId}
               />
             )}
-            <Link href="/students/new" style={addButton}>+ 학생 추가</Link>
+            <Link
+              href={effectiveClassGroupId ? `/students/new?classGroupId=${encodeURIComponent(effectiveClassGroupId)}` : "/students/new"}
+              style={addButton}
+            >
+              + 학생 추가
+            </Link>
           </div>
         </header>
 
@@ -183,7 +187,7 @@ function sheetOptionLabel(options: Array<{ value: string; label: string }>, valu
   return options.find((option) => option.value === value)?.label ?? value;
 }
 
-const page: CSSProperties = { height: "100vh", minHeight: 0, overflow: "hidden", background: "#f3f4f6", color: "#111827" };
+const page: CSSProperties = { height: "100vh", minHeight: 0, overflow: "hidden", background: "var(--asc-bg-subtle)", color: "var(--asc-text)" };
 const container: CSSProperties = {
   width: "100%",
   height: "100%",
@@ -201,21 +205,22 @@ const header: CSSProperties = {
   alignItems: "center",
   gap: 12,
   flexWrap: "wrap",
-  background: "#fff",
-  border: "1px solid #e5e7eb",
+  background: "var(--asc-surface)",
+  border: "1px solid var(--asc-border)",
   borderRadius: 8,
   padding: "6px 10px",
 };
 const headingRow: CSSProperties = { display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", minWidth: 0 };
-const eyebrow: CSSProperties = { margin: 0, color: "#2563eb", fontSize: 11, fontWeight: 900 };
+const eyebrow: CSSProperties = { margin: 0, color: "var(--asc-primary)", fontSize: 11, fontWeight: 900 };
 const title: CSSProperties = { margin: 0, fontSize: 20, fontWeight: 950, lineHeight: 1.1 };
-const desc: CSSProperties = { color: "#6b7280", fontSize: 12, fontWeight: 700 };
+const desc: CSSProperties = { color: "var(--asc-text-muted)", fontSize: 12, fontWeight: 700 };
 const addButton: CSSProperties = {
   height: 30,
   display: "inline-flex",
   alignItems: "center",
-  background: "#111827",
+  background: "var(--asc-primary)",
   color: "#fff",
+  border: "1px solid var(--asc-primary)",
   borderRadius: 7,
   padding: "0 11px",
   textDecoration: "none",

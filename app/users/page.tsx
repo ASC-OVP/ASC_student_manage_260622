@@ -97,24 +97,24 @@ function errorMessage(error: string) {
   return "권한 또는 입력값을 확인하세요.";
 }
 
-const page: CSSProperties = { padding: 16, color: "#111827" };
+const page: CSSProperties = { padding: 12, color: "#111827" };
 const container: CSSProperties = { width: "100%", maxWidth: "none", margin: 0 };
-const title: CSSProperties = { fontSize: 25, fontWeight: 950, margin: "0 0 8px" };
-const desc: CSSProperties = { color: "#6b7280", margin: "0 0 18px" };
-const grid: CSSProperties = { display: "grid", gridTemplateColumns: "360px 1fr", gap: 18 };
-const card: CSSProperties = { background: "#fff", border: "1px solid #e5e7eb", borderRadius: 8, padding: 14 };
+const title: CSSProperties = { fontSize: 23, fontWeight: 950, margin: "0 0 4px" };
+const desc: CSSProperties = { color: "#6b7280", margin: "0 0 12px", fontSize: 13 };
+const grid: CSSProperties = { display: "grid", gridTemplateColumns: "320px 1fr", gap: 10 };
+const card: CSSProperties = { background: "#fff", border: "1px solid #e5e7eb", borderRadius: 8, padding: 10 };
 const wideCard: CSSProperties = { gridColumn: "1 / -1" };
-const sectionTitle: CSSProperties = { margin: "0 0 14px", fontSize: 20, fontWeight: 950 };
-const form: CSSProperties = { display: "flex", flexDirection: "column", gap: 10 };
-const input: CSSProperties = { padding: "12px", border: "1px solid #d1d5db", borderRadius: 8 };
-const btn: CSSProperties = { background: "#111827", color: "#fff", border: 0, borderRadius: 8, padding: "12px", fontWeight: 950 };
-const listHead: CSSProperties = { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 };
-const permissionBadge: CSSProperties = { border: "1px solid #d1d5db", borderRadius: 999, padding: "7px 10px", color: "#4b5563", fontWeight: 900, fontSize: 12 };
+const sectionTitle: CSSProperties = { margin: "0 0 8px", fontSize: 18, fontWeight: 950 };
+const form: CSSProperties = { display: "flex", flexDirection: "column", gap: 8 };
+const input: CSSProperties = { padding: "8px 10px", minHeight: 36, border: "1px solid #d1d5db", borderRadius: 8 };
+const btn: CSSProperties = { background: "#111827", color: "#fff", border: 0, borderRadius: 8, padding: "8px 10px", minHeight: 36, fontWeight: 950 };
+const listHead: CSSProperties = { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 };
+const permissionBadge: CSSProperties = { border: "1px solid #d1d5db", borderRadius: 999, padding: "5px 8px", color: "#4b5563", fontWeight: 900, fontSize: 12 };
 const list: CSSProperties = { borderTop: "1px solid #f3f4f6" };
-const row: CSSProperties = { display: "grid", gridTemplateColumns: "1fr 1fr 82px 72px 96px", gap: 10, alignItems: "center", padding: "12px 0", borderBottom: "1px solid #f3f4f6" };
+const row: CSSProperties = { display: "grid", gridTemplateColumns: "1fr 1fr 82px 72px 96px", gap: 8, alignItems: "center", padding: "9px 0", borderBottom: "1px solid #f3f4f6" };
 const inactiveRow: CSSProperties = { color: "#6b7280", background: "#fafafa" };
 const activeBadge: CSSProperties = { color: "#166534", background: "#dcfce7", borderRadius: 999, padding: "5px 8px", textAlign: "center", fontWeight: 900 };
 const inactiveBadge: CSSProperties = { color: "#6b7280", background: "#f3f4f6", borderRadius: 999, padding: "5px 8px", textAlign: "center", fontWeight: 900 };
-const del: CSSProperties = { background: "#fee2e2", color: "#991b1b", border: "1px solid #fecaca", borderRadius: 8, padding: "8px 10px", fontWeight: 900 };
+const del: CSSProperties = { background: "#fee2e2", color: "#991b1b", border: "1px solid #fecaca", borderRadius: 8, padding: "6px 9px", fontWeight: 900 };
 const muted: CSSProperties = { color: "#9ca3af", textAlign: "center", fontWeight: 900 };
-const error: CSSProperties = { background: "#fee2e2", color: "#991b1b", padding: 12, borderRadius: 8, fontWeight: 900 };
+const error: CSSProperties = { background: "#fee2e2", color: "#991b1b", padding: 10, borderRadius: 8, fontWeight: 900 };

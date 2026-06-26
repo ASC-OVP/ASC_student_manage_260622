@@ -225,7 +225,7 @@ export default function AcademyCalendar({ events, teachers, assistants, classGro
           <div style={legendRow}>
             <Legend color="#4f46e5">반 수업</Legend>
             <Legend color="#64748b">해야 할 일</Legend>
-            <Legend color="#2563eb">진행 중</Legend>
+            <Legend color="#0b50d0">진행 중</Legend>
             <Legend color="#16a34a">완료</Legend>
             <Legend color="#dc2626">지연</Legend>
             <span style={eventCount}>{materializedEvents.length}개 일정</span>
@@ -523,7 +523,7 @@ function weekdayLabel(date: Date) {
 
 function statusColor(status?: string | null) {
   if (status === "DONE") return "#16a34a";
-  if (status === "IN_PROGRESS") return "#2563eb";
+  if (status === "IN_PROGRESS") return "#0b50d0";
   if (status === "HOLD") return "#d97706";
   if (status === "OVERDUE") return "#dc2626";
   return "#64748b";
@@ -557,8 +557,8 @@ function typeBadge(type: "class" | "task" | "date"): CSSProperties {
 
 function statusBadge(status: string): CSSProperties {
   if (status === "DONE") return { ...badge, background: "#dcfce7", color: "#166534" };
-  if (status === "IN_PROGRESS") return { ...badge, background: "#dbeafe", color: "#1d4ed8" };
-  if (status === "UPCOMING") return { ...badge, background: "#dbeafe", color: "#1d4ed8" };
+  if (status === "IN_PROGRESS") return { ...badge, background: "#e8f0fe", color: "#083891" };
+  if (status === "UPCOMING") return { ...badge, background: "#e8f0fe", color: "#083891" };
   if (status === "HOLD" || status === "PAUSED") return { ...badge, background: "#fef3c7", color: "#92400e" };
   if (status === "OVERDUE") return { ...badge, background: "#fee2e2", color: "#991b1b" };
   return badge;
@@ -623,16 +623,16 @@ const select: CSSProperties = {
   fontSize: 12,
   fontWeight: 850,
 };
-const contentGrid: CSSProperties = { display: "grid", gridTemplateColumns: "minmax(0, 1fr) 320px", gap: 12, alignItems: "start" };
-const calendarCard: CSSProperties = { minWidth: 0, minHeight: 680, border: "1px solid #dfe3ea", borderRadius: 10, background: "#fff", padding: 12, overflow: "auto" };
-const calendarControls: CSSProperties = { display: "grid", gridTemplateColumns: "auto minmax(0, 1fr) auto", alignItems: "center", gap: 10, marginBottom: 10 };
+const contentGrid: CSSProperties = { display: "grid", gridTemplateColumns: "minmax(0, 1fr) 300px", gap: 10, alignItems: "start" };
+const calendarCard: CSSProperties = { minWidth: 0, minHeight: 560, border: "1px solid #dfe3ea", borderRadius: 8, background: "#fff", padding: 10, overflow: "auto" };
+const calendarControls: CSSProperties = { display: "grid", gridTemplateColumns: "auto minmax(0, 1fr) auto", alignItems: "center", gap: 8, marginBottom: 8 };
 const navGroup: CSSProperties = { display: "inline-flex", gap: 4 };
 const navButton: CSSProperties = { height: 30, border: "1px solid #d1d5db", borderRadius: 6, background: "#fff", padding: "0 10px", fontSize: 12, fontWeight: 950, cursor: "pointer" };
-const calendarTitle: CSSProperties = { margin: 0, textAlign: "center", fontSize: 18, fontWeight: 950 };
+const calendarTitle: CSSProperties = { margin: 0, textAlign: "center", fontSize: 17, fontWeight: 950 };
 const viewTabs: CSSProperties = { display: "inline-flex", gap: 3, border: "1px solid #d1d5db", borderRadius: 7, padding: 2, background: "#f8fafc" };
 const viewButton: CSSProperties = { border: 0, borderRadius: 5, background: "transparent", padding: "6px 10px", fontSize: 12, fontWeight: 950, cursor: "pointer", color: "#475569" };
 const viewButtonActive: CSSProperties = { background: "#111827", color: "#fff" };
-const legendRow: CSSProperties = { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 10, fontSize: 12, color: "#475569", fontWeight: 850 };
+const legendRow: CSSProperties = { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8, fontSize: 12, color: "#475569", fontWeight: 850 };
 const legend: CSSProperties = { display: "inline-flex", alignItems: "center", gap: 5 };
 const legendDot: CSSProperties = { width: 9, height: 9, borderRadius: 999, display: "inline-block" };
 const eventCount: CSSProperties = { marginLeft: "auto", color: "#111827", fontWeight: 950 };
@@ -649,17 +649,17 @@ const dayCell: CSSProperties = {
   borderRight: "1px solid #d1d5db",
   borderBottom: "1px solid #d1d5db",
   background: "#fff",
-  minHeight: 112,
-  padding: 8,
+  minHeight: 92,
+  padding: 6,
   textAlign: "left",
   display: "grid",
   alignContent: "start",
-  gap: 8,
+  gap: 6,
   cursor: "pointer",
 };
-const dayCellLarge: CSSProperties = { minHeight: 560 };
+const dayCellLarge: CSSProperties = { minHeight: 440 };
 const mutedDayCell: CSSProperties = { background: "#f8fafc", color: "#94a3b8" };
-const todayCell: CSSProperties = { boxShadow: "inset 0 0 0 2px #2563eb" };
+const todayCell: CSSProperties = { boxShadow: "inset 0 0 0 2px #0b50d0" };
 const dayHeader: CSSProperties = { display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12 };
 const dayHeaderRight: CSSProperties = { display: "inline-flex", alignItems: "center", gap: 4 };
 const memoDot: CSSProperties = { width: 7, height: 7, borderRadius: 999, background: "#f59e0b", display: "inline-block" };
@@ -679,19 +679,19 @@ const eventPill: CSSProperties = {
 const eventPillMeta: CSSProperties = { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 };
 const eventMemoDot: CSSProperties = { width: 6, height: 6, borderRadius: 999, background: "#facc15", boxShadow: "0 0 0 1px rgba(15,23,42,.2)" };
 const noEvent: CSSProperties = { color: "#cbd5e1", fontSize: 12, fontWeight: 850 };
-const sidePanel: CSSProperties = { position: "sticky", top: 12 };
-const detailCard: CSSProperties = { border: "1px solid #dfe3ea", borderRadius: 10, background: "#fff", padding: 14, display: "grid", gap: 12 };
+const sidePanel: CSSProperties = { position: "sticky", top: 10 };
+const detailCard: CSSProperties = { border: "1px solid #dfe3ea", borderRadius: 8, background: "#fff", padding: 10, display: "grid", gap: 9 };
 const detailHeader: CSSProperties = { display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" };
-const detailTitle: CSSProperties = { margin: 0, fontSize: 20, fontWeight: 950, lineHeight: 1.25 };
-const infoList: CSSProperties = { display: "grid", gap: 7 };
-const infoRow: CSSProperties = { display: "grid", gridTemplateColumns: "78px minmax(0, 1fr)", gap: 8, fontSize: 13, alignItems: "start" };
-const description: CSSProperties = { margin: 0, color: "#4b5563", fontSize: 13, lineHeight: 1.55, borderTop: "1px solid #eef2f7", paddingTop: 10 };
-const detailActions: CSSProperties = { display: "flex", gap: 8, flexWrap: "wrap" };
+const detailTitle: CSSProperties = { margin: 0, fontSize: 18, fontWeight: 950, lineHeight: 1.25 };
+const infoList: CSSProperties = { display: "grid", gap: 6 };
+const infoRow: CSSProperties = { display: "grid", gridTemplateColumns: "72px minmax(0, 1fr)", gap: 6, fontSize: 13, alignItems: "start" };
+const description: CSSProperties = { margin: 0, color: "#4b5563", fontSize: 13, lineHeight: 1.45, borderTop: "1px solid #eef2f7", paddingTop: 8 };
+const detailActions: CSSProperties = { display: "flex", gap: 6, flexWrap: "wrap" };
 const primaryLink: CSSProperties = { border: "1px solid #111827", background: "#111827", color: "#fff", borderRadius: 7, padding: "8px 10px", textDecoration: "none", fontSize: 12, fontWeight: 950 };
 const secondaryLink: CSSProperties = { ...primaryLink, borderColor: "#d1d5db", background: "#fff", color: "#111827" };
 const primaryButton: CSSProperties = { border: "1px solid #111827", background: "#111827", color: "#fff", borderRadius: 7, padding: "8px 10px", fontSize: 12, fontWeight: 950 };
-const memoForm: CSSProperties = { display: "grid", gap: 8 };
-const memoLabel: CSSProperties = { display: "grid", gap: 6, fontSize: 13, fontWeight: 950 };
-const memoTextarea: CSSProperties = { width: "100%", border: "1px solid #d1d5db", borderRadius: 7, padding: 9, resize: "vertical", font: "inherit", color: "#111827" };
+const memoForm: CSSProperties = { display: "grid", gap: 6 };
+const memoLabel: CSSProperties = { display: "grid", gap: 5, fontSize: 13, fontWeight: 950 };
+const memoTextarea: CSSProperties = { width: "100%", border: "1px solid #d1d5db", borderRadius: 7, padding: 8, resize: "vertical", font: "inherit", color: "#111827" };
 const memoMeta: CSSProperties = { color: "#6b7280", fontSize: 11, fontWeight: 850 };
 const badge: CSSProperties = { display: "inline-flex", alignItems: "center", borderRadius: 999, background: "#f1f5f9", color: "#475569", padding: "4px 8px", fontSize: 12, fontWeight: 950 };

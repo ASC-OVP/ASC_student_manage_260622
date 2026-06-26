@@ -1,5 +1,6 @@
 import { requireUser } from "@/lib/auth";
 import ConfirmSubmitButton from "@/components/ConfirmSubmitButton";
+import PhoneInput from "@/components/PhoneInput";
 import { todayKoreaDate } from "@/lib/date";
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
@@ -164,8 +165,8 @@ export default async function StudentDetailPage({ params, searchParams }: Props)
                 </div>
 
                 <div style={infoGrid}>
-                  <Field label="학생 연락처"><input name="phone" defaultValue={student.phone ?? ""} style={miniInput} /></Field>
-                  <Field label="보호자 연락처"><input name="parentPhone" defaultValue={student.parentPhone ?? ""} style={miniInput} /></Field>
+                  <Field label="학생 연락처"><PhoneInput name="phone" defaultValue={student.phone} style={miniInput} /></Field>
+                  <Field label="보호자 연락처"><PhoneInput name="parentPhone" defaultValue={student.parentPhone} style={miniInput} /></Field>
                   <Field label="학교"><input name="schoolName" defaultValue={student.schoolName ?? ""} style={miniInput} /></Field>
                   <Field label="학년"><input name="grade" defaultValue={student.grade ?? ""} style={miniInput} /></Field>
                   <Field label="소속 반">
@@ -517,10 +518,10 @@ function ScoreTrendChart({ points }: { points: ScorePoint[] }) {
           </g>
         );
       })}
-      <polyline points={line} fill="none" stroke="#2563eb" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+      <polyline points={line} fill="none" stroke="#0b50d0" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
       {coords.map(({ point, x, y }, index) => (
         <g key={`${point.date}-${point.title}-${index}`}>
-          <circle cx={x} cy={y} r="5" fill="#fff" stroke="#2563eb" strokeWidth="3">
+          <circle cx={x} cy={y} r="5" fill="#fff" stroke="#0b50d0" strokeWidth="3">
             <title>{`${point.title} / ${point.date} / ${point.rawScore}/${point.maxScore}점 (${formatScoreValue(point.percent)}점 환산)`}</title>
           </circle>
           <text x={x} y={y - 10} textAnchor="middle" fontSize="11" fill="#111827" fontWeight="800">{formatScoreValue(point.percent)}</text>
@@ -765,14 +766,14 @@ const analysisTitle: CSSProperties = { margin: 0, fontSize: 18, fontWeight: 950 
 const analysisLead: CSSProperties = { margin: "4px 0 0", color: "#64748b", fontSize: 13, fontWeight: 850 };
 const scoreMetricGrid: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(132px, 1fr))", gap: 8 };
 const scoreMetric: CSSProperties = { border: "1px solid #e5e7eb", borderRadius: 8, background: "#fff", padding: "10px 11px", display: "grid", gap: 3, minHeight: 76 };
-const scoreMetricGood: CSSProperties = { border: "1px solid #bfdbfe", background: "#eff6ff" };
+const scoreMetricGood: CSSProperties = { border: "1px solid var(--asc-primary)", background: "var(--asc-primary-soft)" };
 const scoreMetricDanger: CSSProperties = { border: "1px solid #fecaca", background: "#fef2f2" };
 const analysisLayout: CSSProperties = { display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(220px, 300px)", gap: 12, alignItems: "center" };
 const scoreTrendChart: CSSProperties = { width: "100%", minHeight: 220, border: "1px solid #e5e7eb", borderRadius: 10, background: "#fff" };
 const analysisCopy: CSSProperties = { display: "grid", gap: 9, color: "#374151", fontSize: 14, lineHeight: 1.55 };
 const emptyChartLarge: CSSProperties = { minHeight: 180, display: "grid", placeItems: "center", color: "#9ca3af", fontSize: 13, fontWeight: 900, border: "1px dashed #d1d5db", borderRadius: 10, background: "#fff" };
 const wideInput: CSSProperties = { ...miniInput, width: 180 };
-const answerText: CSSProperties = { marginTop: 4, color: "#2563eb" };
+const answerText: CSSProperties = { marginTop: 4, color: "#083891" };
 const scoreGroup: CSSProperties = { display: "grid", gridTemplateColumns: "1fr 240px", gap: 16, alignItems: "center", borderBottom: "1px solid #e5e7eb", padding: "16px 0" };
 const scoreList: CSSProperties = { display: "grid", gap: 8 };
 const groupTitle: CSSProperties = { margin: "0 0 6px", fontSize: 17, fontWeight: 950 };

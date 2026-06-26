@@ -12,6 +12,7 @@ import { recognizeWithPythonOmr, type PythonOmrAnswer } from "@/lib/omrPythonCli
 import { getOmrTemplate, omrTemplateList } from "@/lib/omrTemplates";
 import { OMR_MAX_BATCH_BYTES, OMR_MAX_FILE_BYTES } from "@/lib/omrUploadLimits";
 import { recordActivity } from "@/lib/activityLog";
+import { phoneLastDigits } from "@/lib/phone";
 
 const ANSWER_STATUSES = Object.values(OmrAnswerStatus) as OmrAnswerStatus[];
 const TEMPLATE_TYPES = omrTemplateList.map((template) => template.type);
@@ -84,10 +85,7 @@ function normalizeAnswer(value?: string) {
 }
 
 function phoneLast8(value?: string | null) {
-  if (!value) return null;
-  const digits = value.replace(/\D/g, "");
-  if (digits.length < 8) return null;
-  return digits.slice(-8);
+  return phoneLastDigits(value, 8) || null;
 }
 
 function normalizePhoneRecognizeStatus(status?: string | null, last8?: string | null) {

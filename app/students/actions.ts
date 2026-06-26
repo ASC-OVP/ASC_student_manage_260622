@@ -19,6 +19,7 @@ import { randomUUID } from "crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { recordActivity } from "@/lib/activityLog";
+import { formatPhoneNumber } from "@/lib/phone";
 
 const STUDENT_STATUSES = Object.values(StudentStatus) as StudentStatus[];
 const MEMO_TYPES = Object.values(MemoType) as MemoType[];
@@ -55,6 +56,17 @@ function text(formData: FormData, key: string) {
 function nullableText(formData: FormData, key: string) {
   const value = text(formData, key);
   return value.length > 0 ? value : null;
+}
+
+function nullablePhoneText(formData: FormData, key: string) {
+  const value = formatPhoneNumber(text(formData, key));
+  return value.length > 0 ? value : null;
+}
+
+function nullablePhoneValue(value: string | null) {
+  if (!value) return null;
+  const formatted = formatPhoneNumber(value);
+  return formatted.length > 0 ? formatted : null;
 }
 
 function numberValue(formData: FormData, key: string) {
@@ -184,8 +196,8 @@ export async function createStudent(formData: FormData) {
   const user = await requireUser();
 
   const name = text(formData, "name");
-  const phone = nullableText(formData, "phone");
-  const parentPhone = nullableText(formData, "parentPhone");
+  const phone = nullablePhoneText(formData, "phone");
+  const parentPhone = nullablePhoneText(formData, "parentPhone");
   const schoolName = nullableText(formData, "schoolName");
   const grade = nullableText(formData, "grade");
   const subject = nullableText(formData, "subject");
@@ -248,7 +260,7 @@ export async function createStudent(formData: FormData) {
   }
 
   revalidatePath("/students");
-  redirect("/students");
+  redirect(classGroup ? `/students?classGroupId=${encodeURIComponent(classGroup.id)}` : "/students?classGroupId=all");
 }
 
 export async function updateStudent(formData: FormData) {
@@ -256,8 +268,8 @@ export async function updateStudent(formData: FormData) {
 
   const id = text(formData, "id") || text(formData, "studentId");
   const name = text(formData, "name");
-  const phone = nullableText(formData, "phone");
-  const parentPhone = nullableText(formData, "parentPhone");
+  const phone = nullablePhoneText(formData, "phone");
+  const parentPhone = nullablePhoneText(formData, "parentPhone");
   const schoolName = nullableText(formData, "schoolName");
   const grade = nullableText(formData, "grade");
   const subject = nullableText(formData, "subject");
@@ -376,8 +388,8 @@ export async function createStudentFromSheet(formData: FormData) {
   }
 
   const name = text(formData, "name");
-  const phone = nullableText(formData, "phone");
-  const parentPhone = nullableText(formData, "parentPhone");
+  const phone = nullablePhoneText(formData, "phone");
+  const parentPhone = nullablePhoneText(formData, "parentPhone");
   const schoolName = nullableText(formData, "schoolName");
   const grade = nullableText(formData, "grade");
   const subject = nullableText(formData, "subject");
@@ -461,8 +473,8 @@ export async function createStudentsFromExcelUpload(formData: FormData) {
   const rows = parsedRows
     .map((row) => ({
       name: String(row?.name ?? "").trim().slice(0, 80),
-      phone: String(row?.phone ?? "").trim().slice(0, 40),
-      parentPhone: String(row?.parentPhone ?? "").trim().slice(0, 40),
+      phone: formatPhoneNumber(String(row?.phone ?? "").trim()).slice(0, 40),
+      parentPhone: formatPhoneNumber(String(row?.parentPhone ?? "").trim()).slice(0, 40),
       schoolName: String(row?.schoolName ?? "").trim().slice(0, 80),
       grade: String(row?.grade ?? "").trim().slice(0, 40),
       classGroupId: cleanId(String(row?.classGroupId ?? "").trim()),
@@ -1107,8 +1119,9 @@ export async function updateStudentSheetCell(formData: FormData) {
 
   const studentId = text(formData, "studentId");
   const field = text(formData, "field");
-  const value = nullableText(formData, "value");
+  const rawValue = nullableText(formData, "value");
   const editableFields = ["name", "phone", "parentPhone", "schoolName", "grade", "subject", "currentLevel", "memo"] as const;
+  const value = field === "phone" || field === "parentPhone" ? nullablePhoneValue(rawValue) : rawValue;
 
   if (!studentId || !editableFields.includes(field as (typeof editableFields)[number])) {
     throw new Error("수정할 학생 칸을 확인해주세요.");

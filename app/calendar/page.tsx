@@ -353,7 +353,7 @@ function effectiveTaskStatus(status: TaskStatus | string, dueDate: Date | null) 
 
 function taskColor(status: string) {
   if (status === "DONE") return "#16a34a";
-  if (status === "IN_PROGRESS") return "#2563eb";
+  if (status === "IN_PROGRESS") return "#0b50d0";
   if (status === "HOLD") return "#d97706";
   if (status === "OVERDUE") return "#dc2626";
   return "#64748b";
@@ -412,21 +412,21 @@ function Stat({ label, value, tone = "default" }: { label: string; value: string
   );
 }
 
-const page: CSSProperties = { padding: 14, color: "#111827", background: "#f3f4f6", minHeight: "100vh" };
-const container: CSSProperties = { width: "100%", maxWidth: "none", margin: 0, display: "grid", gap: 12 };
+const page: CSSProperties = { padding: 12, color: "var(--asc-text)", background: "var(--asc-bg-subtle)", minHeight: "100vh" };
+const container: CSSProperties = { width: "100%", maxWidth: "none", margin: 0, display: "grid", gap: 10 };
 const header: CSSProperties = {
   display: "flex",
   justifyContent: "space-between",
-  gap: 16,
+  gap: 10,
   alignItems: "flex-end",
-  border: "1px solid #dfe3ea",
-  borderRadius: 10,
-  background: "#fff",
-  padding: 16,
+  border: "1px solid var(--asc-border)",
+  borderRadius: "var(--asc-radius-lg)",
+  background: "var(--asc-surface)",
+  padding: 12,
 };
-const eyebrow: CSSProperties = { margin: "0 0 4px", color: "#2563eb", fontWeight: 950, fontSize: 12 };
-const title: CSSProperties = { margin: 0, fontSize: 25, fontWeight: 950 };
-const desc: CSSProperties = { margin: "6px 0 0", color: "#6b7280", fontSize: 14 };
-const summaryStrip: CSSProperties = { display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" };
-const stat: CSSProperties = { minWidth: 102, border: "1px solid #e5e7eb", borderRadius: 8, padding: "8px 10px", display: "grid", gap: 3, background: "#fff" };
-const dangerStat: CSSProperties = { borderColor: "#fecaca", background: "#fef2f2", color: "#991b1b" };
+const eyebrow: CSSProperties = { margin: "0 0 4px", color: "var(--asc-primary)", fontWeight: 950, fontSize: 12 };
+const title: CSSProperties = { margin: 0, fontSize: 23, fontWeight: 950, color: "var(--asc-text)" };
+const desc: CSSProperties = { margin: "4px 0 0", color: "var(--asc-text-muted)", fontSize: 13 };
+const summaryStrip: CSSProperties = { display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" };
+const stat: CSSProperties = { minWidth: 92, border: "1px solid var(--asc-border)", borderRadius: "var(--asc-radius-lg)", padding: "7px 8px", display: "grid", gap: 2, background: "var(--asc-bg)" };
+const dangerStat: CSSProperties = { borderColor: "var(--asc-danger)", background: "var(--asc-danger-soft)", color: "var(--asc-danger)" };

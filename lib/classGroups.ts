@@ -83,7 +83,7 @@ export function classStatusLabel(status: ClassGroupStatus | EffectiveClassStatus
 }
 
 export function classStatusTone(status: ClassGroupStatus | EffectiveClassStatus | string | null | undefined) {
-  if (status === "UPCOMING") return "#2563eb";
+  if (status === "UPCOMING") return "#0b50d0";
   if (status === "PAUSED") return "#f59e0b";
   if (status === "ENDED") return "#6b7280";
   return "#059669";

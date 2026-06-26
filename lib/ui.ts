@@ -1,8 +1,10 @@
 import type { CSSProperties } from "react";
 
 export const page: CSSProperties = {
-  padding: 16,
-  color: "#111827",
+  padding: 12,
+  color: "var(--asc-text)",
+  background: "var(--asc-bg-subtle)",
+  minHeight: "100vh",
 };
 
 export const container: CSSProperties = {
@@ -18,38 +20,42 @@ export const narrowContainer: CSSProperties = {
 };
 
 export const title: CSSProperties = {
-  fontSize: 26,
+  fontSize: 24,
   fontWeight: 900,
-  margin: "0 0 8px",
+  margin: "0 0 4px",
+  color: "var(--asc-text)",
 };
 
 export const desc: CSSProperties = {
-  margin: "0 0 22px",
-  color: "#6b7280",
+  margin: "0 0 12px",
+  color: "var(--asc-text-muted)",
+  fontSize: 13,
 };
 
 export const card: CSSProperties = {
-  background: "#ffffff",
-  border: "1px solid #e5e7eb",
-  borderRadius: 18,
-  padding: 14,
-  boxShadow: "0 8px 20px rgba(15,23,42,.06)",
+  background: "var(--asc-surface)",
+  border: "1px solid var(--asc-border)",
+  borderRadius: "var(--asc-radius-lg)",
+  padding: 12,
+  boxShadow: "var(--asc-shadow-sm)",
 };
 
 export const input: CSSProperties = {
   width: "100%",
-  padding: "11px 12px",
-  border: "1px solid #d1d5db",
-  borderRadius: 10,
-  background: "#ffffff",
-  color: "#111827",
+  minHeight: 36,
+  padding: "8px 10px",
+  border: "1px solid var(--asc-border-strong)",
+  borderRadius: "var(--asc-radius-md)",
+  background: "var(--asc-bg)",
+  color: "var(--asc-text)",
 };
 
 export const button: CSSProperties = {
-  padding: "11px 14px",
-  border: "none",
-  borderRadius: 10,
-  background: "#111827",
+  minHeight: 36,
+  padding: "8px 12px",
+  border: "1px solid var(--asc-primary)",
+  borderRadius: "var(--asc-radius-md)",
+  background: "var(--asc-primary)",
   color: "#ffffff",
   fontWeight: 900,
   cursor: "pointer",
@@ -61,20 +67,21 @@ export const button: CSSProperties = {
 
 export const lightButton: CSSProperties = {
   ...button,
-  background: "#ffffff",
-  color: "#111827",
-  border: "1px solid #d1d5db",
+  background: "var(--asc-primary-soft)",
+  color: "var(--asc-primary-deep)",
+  border: "1px solid var(--asc-primary)",
 };
 
 export const dangerButton: CSSProperties = {
   ...button,
-  background: "#dc2626",
+  background: "var(--asc-danger)",
+  borderColor: "var(--asc-danger)",
 };
 
 export const excelTable: CSSProperties = {
   width: "100%",
   borderCollapse: "collapse",
-  background: "#ffffff",
+  background: "var(--asc-bg)",
   fontSize: 14,
 };
 
@@ -82,9 +89,9 @@ export const excelTh: CSSProperties = {
   position: "sticky",
   top: 0,
   zIndex: 1,
-  background: "#eef2ff",
-  color: "#1f2937",
-  border: "1px solid #cbd5e1",
+  background: "var(--asc-secondary-soft)",
+  color: "var(--asc-text)",
+  border: "1px solid var(--asc-border)",
   padding: "9px 10px",
   textAlign: "left",
   fontWeight: 900,
@@ -92,15 +99,15 @@ export const excelTh: CSSProperties = {
 };
 
 export const excelTd: CSSProperties = {
-  border: "1px solid #dbe4ee",
+  border: "1px solid var(--asc-border)",
   padding: "8px 10px",
-  color: "#111827",
+  color: "var(--asc-text)",
   verticalAlign: "middle",
 };
 
 export const tableWrap: CSSProperties = {
   overflow: "auto",
-  border: "1px solid #cbd5e1",
-  borderRadius: 14,
-  background: "#ffffff",
+  border: "1px solid var(--asc-border)",
+  borderRadius: "var(--asc-radius-lg)",
+  background: "var(--asc-bg)",
 };

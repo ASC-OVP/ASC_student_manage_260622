@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { studentWhereForUser } from "@/lib/scopes";
 import { recordActivity } from "@/lib/activityLog";
+import { formatPhoneNumber } from "@/lib/phone";
 
 export const dynamic = "force-dynamic";
 
@@ -52,8 +53,8 @@ export async function GET() {
       const latestMemo = student.memos[0];
       return [
         student.name,
-        student.phone ?? "",
-        student.parentPhone ?? "",
+        formatPhoneNumber(student.phone ?? ""),
+        formatPhoneNumber(student.parentPhone ?? ""),
         student.schoolName ?? "",
         student.grade ?? "",
         student.subject ?? "",

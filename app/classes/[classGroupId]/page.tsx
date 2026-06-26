@@ -16,6 +16,7 @@ import {
 } from "@/lib/classGroups";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { formatPhoneNumber } from "@/lib/phone";
 
 type Props = {
   params: Promise<{ classGroupId: string }>;
@@ -267,7 +268,7 @@ export default async function ClassDetailPage({ params }: Props) {
                           <Td><Link href={`/students/${student.id}`} style={nameLink}>{student.name}</Link></Td>
                           <Td>{student.schoolName ?? "-"}</Td>
                           <Td>{student.grade ?? "-"}</Td>
-                          <Td>{student.phone ?? "-"}</Td>
+                          <Td>{formatPhoneNumber(student.phone ?? "") || "-"}</Td>
                           <Td>{attendance ? `${attendance.date} / ${attendance.status}` : "-"}</Td>
                           <Td>{assignment ? `${assignment.date} / ${assignment.status}` : "-"}</Td>
                           <Td>{score?.score ?? "-"}</Td>
@@ -395,7 +396,7 @@ function MiniLineChart({ data, suffix, max }: { data: Array<{ label: string; val
   return (
     <div>
       <svg viewBox="0 0 100 100" style={lineChart} preserveAspectRatio="none">
-        <polyline points={points} fill="none" stroke="#2563eb" strokeWidth="3" vectorEffect="non-scaling-stroke" />
+        <polyline points={points} fill="none" stroke="#0b50d0" strokeWidth="3" vectorEffect="non-scaling-stroke" />
       </svg>
       <div style={chartLegend}>
         {data.map((item) => <span key={item.label}>{shortLabel(item.label)} {item.value}{suffix}</span>)}
@@ -449,7 +450,7 @@ function daysAgo(days: number) {
 const page: CSSProperties = { padding: 14, background: "#f8fafc", color: "#111827", minHeight: "100vh" };
 const container: CSSProperties = { display: "flex", flexDirection: "column", gap: 14 };
 const header: CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 16, background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, padding: 18 };
-const backLink: CSSProperties = { color: "#2563eb", fontWeight: 950, textDecoration: "none", fontSize: 13 };
+const backLink: CSSProperties = { color: "#083891", fontWeight: 950, textDecoration: "none", fontSize: 13 };
 const title: CSSProperties = { margin: "6px 0", fontSize: 25, fontWeight: 950 };
 const desc: CSSProperties = { margin: 0, color: "#6b7280", fontWeight: 750 };
 const headerActions: CSSProperties = { display: "flex", alignItems: "center", gap: 8 };
@@ -487,12 +488,12 @@ const chartLegend: CSSProperties = { display: "flex", flexWrap: "wrap", gap: 6, 
 const barList: CSSProperties = { display: "flex", flexDirection: "column", gap: 7 };
 const barRow: CSSProperties = { display: "grid", gridTemplateColumns: "72px 1fr 48px", gap: 8, alignItems: "center", fontSize: 12, fontWeight: 850 };
 const barTrack: CSSProperties = { height: 10, background: "#edf0f3", borderRadius: 999, overflow: "hidden" };
-const barFill: CSSProperties = { height: "100%", background: "#2563eb", borderRadius: 999 };
+const barFill: CSSProperties = { height: "100%", background: "#0b50d0", borderRadius: 999 };
 const tableWrap: CSSProperties = { overflow: "auto", border: "1px solid #e5e7eb", borderRadius: 8 };
 const table: CSSProperties = { width: "100%", minWidth: 980, borderCollapse: "collapse", fontSize: 13 };
 const th: CSSProperties = { background: "#f3f4f6", color: "#374151", borderBottom: "1px solid #d1d5db", padding: "9px 8px", textAlign: "left", whiteSpace: "nowrap" };
 const td: CSSProperties = { borderBottom: "1px solid #edf0f3", padding: "8px", whiteSpace: "nowrap", verticalAlign: "top" };
-const nameLink: CSSProperties = { color: "#1d4ed8", fontWeight: 950, textDecoration: "none" };
+const nameLink: CSSProperties = { color: "#083891", fontWeight: 950, textDecoration: "none" };
 const smallLink: CSSProperties = { border: "1px solid #d1d5db", borderRadius: 7, padding: "5px 8px", color: "#111827", textDecoration: "none", fontWeight: 900 };
 const taskList: CSSProperties = { display: "flex", flexDirection: "column", gap: 8 };
 const taskItem: CSSProperties = { display: "flex", justifyContent: "space-between", gap: 12, border: "1px solid #edf0f3", borderRadius: 8, padding: 10, color: "#111827", textDecoration: "none" };

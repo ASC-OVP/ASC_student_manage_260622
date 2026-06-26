@@ -466,7 +466,7 @@ function Td({ children }: { children: ReactNode }) {
 
 function sourceBadge(source: MemoSource): CSSProperties {
   const colors: Record<MemoSource, { bg: string; fg: string }> = {
-    student: { bg: "#dbeafe", fg: "#1d4ed8" },
+    student: { bg: "var(--asc-primary-soft)", fg: "var(--asc-primary-deep)" },
     class: { bg: "#dcfce7", fg: "#166534" },
     task: { bg: "#fef3c7", fg: "#92400e" },
     "calendar-private": { bg: "#ede9fe", fg: "#6d28d9" },
@@ -501,39 +501,39 @@ const memoPageCss = `
   }
 `;
 
-const page: CSSProperties = { padding: 12, color: "#111827", background: "#f3f4f6", minHeight: "100vh" };
-const container: CSSProperties = { width: "100%", maxWidth: "none", margin: 0, display: "grid", gap: 12 };
-const header: CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, background: "#fff", border: "1px solid #dfe3ea", borderRadius: 10, padding: "12px 14px" };
-const title: CSSProperties = { margin: 0, fontSize: 23, fontWeight: 950 };
-const desc: CSSProperties = { margin: "4px 0 0", color: "#6b7280", fontSize: 13 };
-const primaryButton: CSSProperties = { background: "#111827", color: "#fff", borderRadius: 8, padding: "10px 13px", textDecoration: "none", fontWeight: 950, whiteSpace: "nowrap" };
-const memoGrid: CSSProperties = { display: "grid", gap: 12, alignItems: "start" };
-const legacyPanel: CSSProperties = { display: "grid", gap: 10, background: "#fff", border: "1px solid #dfe3ea", borderRadius: 10, padding: 11 };
+const page: CSSProperties = { padding: 10, color: "var(--asc-text)", background: "var(--asc-bg-subtle)", minHeight: "100vh" };
+const container: CSSProperties = { width: "100%", maxWidth: "none", margin: 0, display: "grid", gap: 10 };
+const header: CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, background: "var(--asc-surface)", border: "1px solid var(--asc-border)", borderRadius: "var(--asc-radius-lg)", padding: "10px 12px" };
+const title: CSSProperties = { margin: 0, fontSize: 22, fontWeight: 950, color: "var(--asc-text)" };
+const desc: CSSProperties = { margin: "4px 0 0", color: "var(--asc-text-muted)", fontSize: 13 };
+const primaryButton: CSSProperties = { background: "var(--asc-primary)", color: "#fff", border: "1px solid var(--asc-primary)", borderRadius: "var(--asc-radius-lg)", padding: "10px 13px", textDecoration: "none", fontWeight: 950, whiteSpace: "nowrap" };
+const memoGrid: CSSProperties = { display: "grid", gap: 10, alignItems: "start" };
+const legacyPanel: CSSProperties = { display: "grid", gap: 8, background: "var(--asc-surface)", border: "1px solid var(--asc-border)", borderRadius: "var(--asc-radius-lg)", padding: 10 };
 const legacyHead: CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" };
 const legacyTitle: CSSProperties = { margin: 0, fontSize: 18, fontWeight: 950 };
-const legacyDesc: CSSProperties = { margin: "5px 0 0", color: "#6b7280", fontSize: 13 };
-const legacySummary: CSSProperties = { display: "flex", gap: 6, flexWrap: "wrap", color: "#4b5563", fontSize: 12, fontWeight: 900 };
-const legacyPill: CSSProperties = { border: "1px solid #e5e7eb", background: "#f8fafc", borderRadius: 999, padding: "5px 8px" };
-const legacyWarnPill: CSSProperties = { ...legacyPill, borderColor: "#fde68a", background: "#fffbeb", color: "#92400e" };
-const filterBar: CSSProperties = { display: "grid", gap: 7, background: "#f8fafc", border: "1px solid #e5e7eb", borderRadius: 8, padding: 8, alignItems: "center" };
-const searchInput: CSSProperties = { height: 34, border: "1px solid #d1d5db", borderRadius: 7, padding: "0 10px", minWidth: 0 };
-const selectInput: CSSProperties = { ...searchInput, background: "#fff" };
-const dateInput: CSSProperties = { ...searchInput, background: "#fff" };
-const secondaryButton: CSSProperties = { height: 34, border: "1px solid #111827", borderRadius: 7, background: "#111827", color: "#fff", padding: "0 12px", fontWeight: 950, cursor: "pointer" };
-const ghostButton: CSSProperties = { height: 34, display: "inline-flex", alignItems: "center", justifyContent: "center", border: "1px solid #d1d5db", borderRadius: 7, background: "#fff", color: "#111827", padding: "0 12px", fontWeight: 950, textDecoration: "none" };
-const tablePanel: CSSProperties = { background: "#fff", border: "1px solid #e5e7eb", borderRadius: 8, overflow: "hidden" };
-const bulkBar: CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "8px 10px", borderBottom: "1px solid #e5e7eb", flexWrap: "wrap" };
-const bulkLeft: CSSProperties = { display: "flex", alignItems: "center", gap: 8, color: "#4b5563", fontSize: 13, flexWrap: "wrap" };
+const legacyDesc: CSSProperties = { margin: "5px 0 0", color: "var(--asc-text-muted)", fontSize: 13 };
+const legacySummary: CSSProperties = { display: "flex", gap: 6, flexWrap: "wrap", color: "var(--asc-text-subtle)", fontSize: 12, fontWeight: 900 };
+const legacyPill: CSSProperties = { border: "1px solid var(--asc-border)", background: "var(--asc-bg-subtle)", borderRadius: 999, padding: "5px 8px" };
+const legacyWarnPill: CSSProperties = { ...legacyPill, borderColor: "var(--asc-warning)", background: "var(--asc-warning-soft)", color: "var(--asc-warning-text)" };
+const filterBar: CSSProperties = { display: "grid", gap: 7, background: "var(--asc-bg-subtle)", border: "1px solid var(--asc-border)", borderRadius: "var(--asc-radius-lg)", padding: 8, alignItems: "center" };
+const searchInput: CSSProperties = { height: 34, border: "1px solid var(--asc-border)", borderRadius: "var(--asc-radius-md)", padding: "0 10px", minWidth: 0, color: "var(--asc-text)" };
+const selectInput: CSSProperties = { ...searchInput, background: "var(--asc-bg)" };
+const dateInput: CSSProperties = { ...searchInput, background: "var(--asc-bg)" };
+const secondaryButton: CSSProperties = { height: 34, border: "1px solid var(--asc-primary)", borderRadius: "var(--asc-radius-md)", background: "var(--asc-primary)", color: "#fff", padding: "0 12px", fontWeight: 950, cursor: "pointer" };
+const ghostButton: CSSProperties = { height: 34, display: "inline-flex", alignItems: "center", justifyContent: "center", border: "1px solid var(--asc-border-strong)", borderRadius: "var(--asc-radius-md)", background: "var(--asc-bg)", color: "var(--asc-text)", padding: "0 12px", fontWeight: 950, textDecoration: "none" };
+const tablePanel: CSSProperties = { background: "var(--asc-surface)", border: "1px solid var(--asc-border)", borderRadius: "var(--asc-radius-lg)", overflow: "hidden" };
+const bulkBar: CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "8px 10px", borderBottom: "1px solid var(--asc-border)", flexWrap: "wrap" };
+const bulkLeft: CSSProperties = { display: "flex", alignItems: "center", gap: 8, color: "var(--asc-text-subtle)", fontSize: 13, flexWrap: "wrap" };
 const bulkActions: CSSProperties = { display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" };
-const smallButton: CSSProperties = { height: 30, border: "1px solid #d1d5db", borderRadius: 7, background: "#fff", color: "#111827", padding: "0 9px", fontSize: 12, fontWeight: 950, cursor: "pointer" };
-const compactSelect: CSSProperties = { height: 30, border: "1px solid #d1d5db", borderRadius: 7, background: "#fff", padding: "0 8px", fontSize: 12, fontWeight: 850 };
+const smallButton: CSSProperties = { height: 30, border: "1px solid var(--asc-border-strong)", borderRadius: "var(--asc-radius-md)", background: "var(--asc-bg)", color: "var(--asc-text)", padding: "0 9px", fontSize: 12, fontWeight: 950, cursor: "pointer" };
+const compactSelect: CSSProperties = { height: 30, border: "1px solid var(--asc-border)", borderRadius: "var(--asc-radius-md)", background: "var(--asc-bg)", padding: "0 8px", fontSize: 12, fontWeight: 850 };
 const tableWrap: CSSProperties = { overflow: "auto" };
 const table: CSSProperties = { width: "100%", minWidth: 940, borderCollapse: "collapse", fontSize: 12 };
-const th: CSSProperties = { textAlign: "left", padding: "8px 9px", background: "#f8fafc", borderBottom: "1px solid #d1d5db", color: "#374151", whiteSpace: "nowrap" };
-const td: CSSProperties = { padding: "7px 9px", borderBottom: "1px solid #f1f5f9", verticalAlign: "top" };
-const memoText: CSSProperties = { margin: 0, maxWidth: 560, whiteSpace: "normal", lineHeight: 1.35, color: "#374151", overflow: "hidden" };
+const th: CSSProperties = { textAlign: "left", padding: "8px 9px", background: "var(--asc-bg-subtle)", borderBottom: "1px solid var(--asc-border)", color: "var(--asc-text-subtle)", whiteSpace: "nowrap" };
+const td: CSSProperties = { padding: "7px 9px", borderBottom: "1px solid var(--asc-border)", verticalAlign: "top" };
+const memoText: CSSProperties = { margin: 0, maxWidth: 560, whiteSpace: "normal", lineHeight: 1.35, color: "var(--asc-text-subtle)", overflow: "hidden" };
 const badge: CSSProperties = { display: "inline-flex", alignItems: "center", borderRadius: 999, padding: "3px 7px", fontSize: 11, fontWeight: 950, whiteSpace: "nowrap", marginRight: 4 };
-const importantBadge: CSSProperties = { ...badge, background: "#fef3c7", color: "#92400e" };
-const linkButton: CSSProperties = { display: "inline-flex", alignItems: "center", height: 26, border: "1px solid #d1d5db", borderRadius: 7, color: "#111827", textDecoration: "none", padding: "0 8px", fontSize: 12, fontWeight: 950, whiteSpace: "nowrap" };
-const muted: CSSProperties = { color: "#9ca3af" };
-const emptyCell: CSSProperties = { padding: 28, textAlign: "center", color: "#6b7280", fontWeight: 900 };
+const importantBadge: CSSProperties = { ...badge, background: "var(--asc-warning-soft)", color: "var(--asc-warning-text)" };
+const linkButton: CSSProperties = { display: "inline-flex", alignItems: "center", height: 26, border: "1px solid var(--asc-border-strong)", borderRadius: "var(--asc-radius-md)", color: "var(--asc-text)", textDecoration: "none", padding: "0 8px", fontSize: 12, fontWeight: 950, whiteSpace: "nowrap" };
+const muted: CSSProperties = { color: "var(--asc-text-muted)" };
+const emptyCell: CSSProperties = { padding: 18, textAlign: "center", color: "var(--asc-text-muted)", fontWeight: 900 };

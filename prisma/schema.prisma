@@ -34,6 +34,10 @@ model Academy {
   announcementMemos    AnnouncementMemo[]
   announcementReads    AnnouncementRead[]
   personalStickyMemos  PersonalStickyMemo[]
+  messageTemplates     MessageTemplate[]
+  messageJobs          MessageJob[]
+  smsConsents          SmsConsent[]
+  smsProviderLogs      SmsProviderLog[]
   omrUploads           OmrUpload[]
   exams                Exam[]
   examResults          ExamResult[]
@@ -98,6 +102,8 @@ model User {
   announcementMemos    AnnouncementMemo[] @relation("AnnouncementMemoAuthor")
   announcementReads    AnnouncementRead[]
   personalStickyMemos  PersonalStickyMemo[]
+  createdMessageTemplates MessageTemplate[] @relation("MessageTemplateCreator")
+  createdMessageJobs      MessageJob[]      @relation("MessageJobCreator")
   counselingRecords CounselingRecord[] @relation("CounselingOwner")
   clinicRecords     ClinicRecord[]     @relation("ClinicOwner")
   questionRecords   QuestionRecord[]   @relation("QuestionOwner")
@@ -150,6 +156,8 @@ model Student {
   scoreRecords       ScoreRecord[]
   omrUploads         OmrUpload[]
   examResults        ExamResult[]
+  messageRecipients  MessageRecipient[]
+  smsConsents        SmsConsent[]
 
   @@index([academyId])
   @@index([academyId, name])
@@ -653,6 +661,127 @@ model PersonalStickyMemo {
 
   @@index([academyId, userId, updatedAt])
   @@index([userId])
+}
+
+model MessageTemplate {
+  id          String   @id @default(uuid())
+  academyId   String
+  name        String
+  category    String   @default("ETC")
+  targetType  String   @default("GUARDIAN")
+  body        String
+  isActive    Boolean  @default(true)
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  createdBy User?   @relation("MessageTemplateCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  jobs      MessageJob[]
+
+  @@index([academyId, category])
+  @@index([academyId, isActive])
+  @@index([createdById])
+}
+
+model MessageJob {
+  id           String    @id @default(uuid())
+  academyId    String
+  templateId   String?
+  title        String
+  targetType   String
+  status       String    @default("PENDING")
+  dryRun       Boolean   @default(true)
+  totalCount   Int       @default(0)
+  successCount Int       @default(0)
+  failedCount  Int       @default(0)
+  createdById  String
+  scheduledAt  DateTime?
+  sentAt       DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  academy      Academy            @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  template     MessageTemplate?   @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  createdBy    User               @relation("MessageJobCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  recipients   MessageRecipient[]
+  providerLogs SmsProviderLog[]
+
+  @@index([academyId, createdAt])
+  @@index([academyId, status])
+  @@index([templateId])
+  @@index([createdById])
+}
+
+model MessageRecipient {
+  id                String    @id @default(uuid())
+  jobId             String
+  studentId         String?
+  recipientType     String
+  receiverName      String
+  phone             String
+  normalizedPhone   String
+  messageText       String
+  status            String    @default("PENDING")
+  providerMessageId String?
+  errorMessage      String?
+  retried           Boolean   @default(false)
+  sentAt            DateTime?
+  createdAt         DateTime  @default(now())
+
+  job         MessageJob       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  student     Student?         @relation(fields: [studentId], references: [id], onDelete: SetNull)
+  providerLogs SmsProviderLog[]
+
+  @@index([jobId])
+  @@index([studentId])
+  @@index([recipientType])
+  @@index([normalizedPhone])
+  @@index([status])
+}
+
+model SmsConsent {
+  id                 String    @id @default(uuid())
+  academyId          String
+  studentId          String?
+  recipientType      String
+  phone              String
+  normalizedPhone    String
+  operationalAllowed Boolean   @default(true)
+  marketingAllowed   Boolean   @default(false)
+  optedOutAt         DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  academy Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  student Student? @relation(fields: [studentId], references: [id], onDelete: SetNull)
+
+  @@unique([academyId, recipientType, normalizedPhone])
+  @@index([academyId, studentId])
+  @@index([normalizedPhone])
+}
+
+model SmsProviderLog {
+  id              String   @id @default(uuid())
+  academyId       String
+  jobId           String?
+  recipientId     String?
+  provider        String
+  requestPayload  String?
+  responsePayload String?
+  status          String
+  errorMessage    String?
+  createdAt       DateTime @default(now())
+
+  academy   Academy           @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  job       MessageJob?       @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  recipient MessageRecipient? @relation(fields: [recipientId], references: [id], onDelete: SetNull)
+
+  @@index([academyId, createdAt])
+  @@index([jobId])
+  @@index([recipientId])
+  @@index([provider])
+  @@index([status])
 }
 
 enum AnnouncementPriority {

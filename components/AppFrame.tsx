@@ -24,6 +24,6 @@ const contentStyle: CSSProperties = {
   minHeight: "100vh",
   minWidth: 0,
   overflowX: "clip",
-  background: "#f3f4f6",
-  transition: "margin-left 160ms ease",
+  background: "var(--asc-bg-subtle)",
+  transition: "margin-left 180ms ease",
 };

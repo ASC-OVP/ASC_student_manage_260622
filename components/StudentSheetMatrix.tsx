@@ -22,6 +22,7 @@ import {
   updateStudentSheetCell,
   updateStudentSheetOptions,
 } from "@/app/students/actions";
+import { formatPhoneNumber, normalizePhoneNumber } from "@/lib/phone";
 import type { SheetCustomColumn } from "@/lib/studentSheetCustomColumns";
 import type { SheetOption } from "@/lib/studentSheetOptions";
 
@@ -319,6 +320,8 @@ function parseStoredConfig(value: string, mode: string, customColumns: SheetCust
 function toDraftRows(rows: StudentSheetRow[]) {
   return rows.map((row) => ({
     ...row,
+    phone: formatPhoneNumber(row.phone),
+    parentPhone: formatPhoneNumber(row.parentPhone),
     assignmentScoreText: row.assignmentScore === null ? "" : String(row.assignmentScore),
     scoreText: row.score === null ? "" : String(row.score),
   }));
@@ -347,8 +350,12 @@ function defaultSortDirection(column: ColumnKey): SortDirection {
 
 function sortAndFilterRows(rows: DraftRow[], sortState: SortState, search: string) {
   const keyword = search.trim().toLocaleLowerCase("ko-KR");
+  const phoneKeyword = normalizePhoneNumber(search);
   const filtered = keyword
-    ? rows.filter((row) => rowSearchText(row).toLocaleLowerCase("ko-KR").includes(keyword))
+    ? rows.filter((row) => {
+        if (phoneKeyword.length >= 3 && normalizePhoneNumber(rowSearchText(row)).includes(phoneKeyword)) return true;
+        return rowSearchText(row).toLocaleLowerCase("ko-KR").includes(keyword);
+      })
     : rows;
 
   if (!sortState) return filtered;
@@ -363,7 +370,9 @@ function rowSearchText(row: DraftRow) {
   return [
     row.name,
     row.phone,
+    normalizePhoneNumber(row.phone),
     row.parentPhone,
+    normalizePhoneNumber(row.parentPhone),
     row.schoolName,
     row.grade,
     row.classGroupName,
@@ -644,13 +653,14 @@ export default function StudentSheetMatrix({
     runSave(() => updateStudentSheetOptions(formData), "선택지 저장됨");
   }
 
-  function saveStudentCell(row: DraftRow, field: StudentTextField, value: string) {
-    updateDraftRow(row.id, { [field]: value } as Partial<DraftRow>);
+function saveStudentCell(row: DraftRow, field: StudentTextField, value: string) {
+    const nextValue = field === "phone" || field === "parentPhone" ? formatPhoneNumber(value) : value;
+    updateDraftRow(row.id, { [field]: nextValue } as Partial<DraftRow>);
 
     const formData = new FormData();
     formData.set("studentId", row.id);
     formData.set("field", field);
-    formData.set("value", value);
+    formData.set("value", nextValue);
 
     runSave(() => updateStudentSheetCell(formData), "학생 정보 저장됨", { quiet: true });
   }
@@ -1659,7 +1669,7 @@ export default function StudentSheetMatrix({
     }
 
     const field = column as StudentTextField;
-    const value = row[field] ?? "";
+    const value = field === "phone" || field === "parentPhone" ? formatPhoneNumber(row[field] ?? "") : row[field] ?? "";
 
     return renderEditableTd(rowIndex, field, undefined, (
         <input
@@ -1813,7 +1823,7 @@ function editCellStyle(isSelected: boolean, status?: string, isRowSelected = fal
     ...statusFill,
     ...(isRowSelected && !status ? selectedFill : {}),
     padding: 0,
-    outline: isSelected ? "2px solid #2563eb" : "none",
+    outline: isSelected ? "2px solid #0b50d0" : "none",
     outlineOffset: -2,
   };
 }
@@ -1877,7 +1887,7 @@ const primaryToolbarButton: CSSProperties = { ...settingsButton, borderColor: "#
 const dangerToolbarButton: CSSProperties = { height: 30, border: "1px solid #fecaca", borderRadius: 4, background: "#fff", color: "#991b1b", padding: "0 9px", fontWeight: 900, fontSize: 12 };
 const fullscreenButton: CSSProperties = { ...settingsButton, marginLeft: "auto", borderColor: "#111827" };
 const saveStatus: CSSProperties = { minWidth: 64, color: "#4b5563", fontWeight: 900, fontSize: 12 };
-const pendingStatus: CSSProperties = { color: "#2563eb" };
+const pendingStatus: CSSProperties = { color: "#083891" };
 const selectionActionBar: CSSProperties = {
   display: "flex",
   alignItems: "center",
@@ -1885,7 +1895,7 @@ const selectionActionBar: CSSProperties = {
   flexWrap: "wrap",
   border: "1px solid #bfdbfe",
   borderRadius: 6,
-  background: "#eff6ff",
+  background: "#e8f0fe",
   padding: 6,
   fontSize: 12,
 };
@@ -2082,7 +2092,7 @@ const headerSortButton: CSSProperties = {
   padding: 0,
 };
 const headerSortDisabled: CSSProperties = { cursor: "default", color: "#374151" };
-const sortMark: CSSProperties = { color: "#2563eb", fontSize: 10 };
+const sortMark: CSSProperties = { color: "#083891", fontSize: 10 };
 const columnMenuToggle: CSSProperties = {
   width: 20,
   height: 22,
@@ -2127,8 +2137,8 @@ const sheetTd: CSSProperties = {
   textAlign: "center",
   whiteSpace: "nowrap",
 };
-const selectedRow: CSSProperties = { background: "#eff6ff" };
-const selectedFill: CSSProperties = { background: "#eff6ff" };
+const selectedRow: CSSProperties = { background: "#e8f0fe" };
+const selectedFill: CSSProperties = { background: "#e8f0fe" };
 const rowActionTd: CSSProperties = { position: "relative", overflow: "visible" };
 const rowMenuButton: CSSProperties = {
   width: 28,

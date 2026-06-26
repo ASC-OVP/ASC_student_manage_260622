@@ -4,6 +4,7 @@ import { backLink, button, card, form, input, label, narrowContainer, page, seco
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { updateStudent } from "../../actions";
+import PhoneInput from "@/components/PhoneInput";
 
 type PageProps = { params: Promise<{ studentId: string }> };
 
@@ -52,8 +53,8 @@ export default async function EditStudentPage({ params }: PageProps) {
                   ))}
                 </select>
               </label>
-              <label style={label}>연락처<input name="phone" defaultValue={student.phone ?? ""} style={input} /></label>
-              <label style={label}>보호자 연락처<input name="parentPhone" defaultValue={student.parentPhone ?? ""} style={input} /></label>
+              <label style={label}>연락처<PhoneInput name="phone" defaultValue={student.phone} style={input} /></label>
+              <label style={label}>보호자 연락처<PhoneInput name="parentPhone" defaultValue={student.parentPhone} style={input} /></label>
               <label style={label}>학교<input name="schoolName" defaultValue={student.schoolName ?? ""} style={input} /></label>
               <label style={label}>학년<input name="grade" defaultValue={student.grade ?? ""} style={input} /></label>
               <label style={label}>과목<input name="subject" defaultValue={student.subject ?? ""} style={input} /></label>

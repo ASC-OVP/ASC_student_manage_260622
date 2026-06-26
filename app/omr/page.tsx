@@ -1237,12 +1237,12 @@ function AnswerInput({ name, question, defaultValue }: { name: string; question:
 function RightSheet({ title, closeHref, wide = false, children }: { title: string; closeHref: string; wide?: boolean; children: ReactNode }) {
   return (
     <div style={sheetBackdrop}>
-      <aside style={{ ...sheet, ...(wide ? wideSheet : {}) }}>
+      <aside role="dialog" aria-modal="true" aria-label={title} style={{ ...sheet, ...(wide ? wideSheet : {}) }}>
         <div style={sheetHeader}>
           <h2 style={sectionTitle}>{title}</h2>
           <OmrCloseButton href={closeHref} />
         </div>
-        {children}
+        <div style={sheetBody}>{children}</div>
       </aside>
     </div>
   );
@@ -1490,70 +1490,70 @@ function studentLabel(student: StudentOption | StudentBrief) {
   return [student.name, student.schoolName, student.grade].filter(Boolean).join(" / ");
 }
 
-const page: CSSProperties = { minHeight: "100vh", background: "#f3f4f6", color: "#111827" };
-const container: CSSProperties = { width: "100%", maxWidth: "none", margin: 0, padding: 14, display: "flex", flexDirection: "column", gap: 10 };
-const topBar: CSSProperties = { display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, padding: 16 };
-const errorNotice: CSSProperties = { border: "1px solid #fecaca", borderRadius: 10, background: "#fef2f2", color: "#991b1b", padding: "10px 12px", fontSize: 13, fontWeight: 800 };
-const warningNotice: CSSProperties = { border: "1px solid #fde68a", borderRadius: 10, background: "#fffbeb", color: "#92400e", padding: "10px 12px", fontSize: 13, fontWeight: 800 };
-const workflowPanel: CSSProperties = { background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, padding: 12, display: "grid", gap: 10 };
+const page: CSSProperties = { minHeight: "100vh", background: "var(--asc-bg-subtle)", color: "var(--asc-text)" };
+const container: CSSProperties = { width: "100%", maxWidth: "none", margin: 0, padding: 12, display: "flex", flexDirection: "column", gap: 8 };
+const topBar: CSSProperties = { display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", background: "var(--asc-surface)", border: "1px solid var(--asc-border)", borderRadius: "var(--asc-radius-lg)", padding: 12 };
+const errorNotice: CSSProperties = { border: "1px solid var(--asc-danger)", borderRadius: "var(--asc-radius-lg)", background: "var(--asc-danger-soft)", color: "var(--asc-danger)", padding: "10px 12px", fontSize: 13, fontWeight: 800 };
+const warningNotice: CSSProperties = { border: "1px solid var(--asc-warning)", borderRadius: "var(--asc-radius-lg)", background: "var(--asc-warning-soft)", color: "var(--asc-warning-text)", padding: "10px 12px", fontSize: 13, fontWeight: 800 };
+const workflowPanel: CSSProperties = { background: "var(--asc-surface)", border: "1px solid var(--asc-border)", borderRadius: "var(--asc-radius-lg)", padding: 10, display: "grid", gap: 8 };
 const stepper: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(5, minmax(120px, 1fr))", gap: 6 };
-const stepItem: CSSProperties = { display: "flex", alignItems: "center", gap: 8, minHeight: 38, border: "1px solid #e5e7eb", borderRadius: 8, background: "#f9fafb", padding: "7px 9px", color: "#6b7280", fontSize: 12, fontWeight: 950 };
-const stepItemActive: CSSProperties = { borderColor: "#93c5fd", background: "#eff6ff", color: "#1d4ed8" };
-const stepItemComplete: CSSProperties = { borderColor: "#bbf7d0", background: "#f0fdf4", color: "#047857" };
-const stepNoPill: CSSProperties = { width: 23, height: 23, borderRadius: 999, display: "inline-flex", alignItems: "center", justifyContent: "center", background: "#e5e7eb", color: "#374151", flex: "0 0 auto" };
-const stepNoActive: CSSProperties = { background: "#2563eb", color: "#fff" };
-const stepNoComplete: CSSProperties = { background: "#16a34a", color: "#fff" };
+const stepItem: CSSProperties = { display: "flex", alignItems: "center", gap: 8, minHeight: 38, border: "1px solid var(--asc-border)", borderRadius: "var(--asc-radius-lg)", background: "var(--asc-bg-subtle)", padding: "7px 9px", color: "var(--asc-text-muted)", fontSize: 12, fontWeight: 950 };
+const stepItemActive: CSSProperties = { borderColor: "var(--asc-primary)", background: "var(--asc-primary-soft)", color: "var(--asc-primary-hover)" };
+const stepItemComplete: CSSProperties = { borderColor: "var(--asc-success)", background: "var(--asc-success-soft)", color: "var(--asc-success)" };
+const stepNoPill: CSSProperties = { width: 23, height: 23, borderRadius: 999, display: "inline-flex", alignItems: "center", justifyContent: "center", background: "var(--asc-border)", color: "var(--asc-text-subtle)", flex: "0 0 auto" };
+const stepNoActive: CSSProperties = { background: "var(--asc-primary)", color: "#fff" };
+const stepNoComplete: CSSProperties = { background: "var(--asc-success)", color: "#fff" };
 const stepLabel: CSSProperties = { whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" };
-const workflowEmptyState: CSSProperties = { border: "1px dashed #d1d5db", borderRadius: 8, padding: 12, display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", background: "#f9fafb" };
-const summaryCard: CSSProperties = { border: "1px solid #dbeafe", borderRadius: 8, background: "#eff6ff", padding: 12, display: "grid", gridTemplateColumns: "minmax(220px, .8fr) minmax(420px, 1.2fr)", gap: 12, alignItems: "center" };
+const workflowEmptyState: CSSProperties = { border: "1px dashed var(--asc-border)", borderRadius: "var(--asc-radius-lg)", padding: 12, display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", background: "var(--asc-bg-subtle)" };
+const summaryCard: CSSProperties = { border: "1px solid var(--asc-primary)", borderRadius: "var(--asc-radius-lg)", background: "var(--asc-primary-soft)", padding: 10, display: "grid", gridTemplateColumns: "minmax(220px, .8fr) minmax(420px, 1.2fr)", gap: 8, alignItems: "center" };
 const summaryTitle: CSSProperties = { margin: "2px 0 5px", fontSize: 18, fontWeight: 950 };
 const summaryMetaGrid: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(3, minmax(120px, 1fr))", gap: 6 };
-const summaryItem: CSSProperties = { border: "1px solid #bfdbfe", borderRadius: 7, background: "#fff", padding: "7px 8px", display: "grid", gap: 2, fontSize: 12 };
+const summaryItem: CSSProperties = { border: "1px solid var(--asc-border)", borderRadius: "var(--asc-radius-md)", background: "var(--asc-bg)", padding: "7px 8px", display: "grid", gap: 2, fontSize: 12 };
 const workflowGrid: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(5, minmax(160px, 1fr))", gap: 8 };
-const stageCard: CSSProperties = { border: "1px solid #e5e7eb", borderRadius: 8, background: "#fff", padding: 10, display: "grid", gridTemplateRows: "auto auto 1fr", gap: 7, minHeight: 170 };
-const stageCardActive: CSSProperties = { borderColor: "#93c5fd", boxShadow: "inset 0 3px 0 #2563eb" };
-const stageCardComplete: CSSProperties = { borderColor: "#bbf7d0" };
+const stageCard: CSSProperties = { border: "1px solid var(--asc-border)", borderRadius: "var(--asc-radius-lg)", background: "var(--asc-bg)", padding: 8, display: "grid", gridTemplateRows: "auto auto 1fr", gap: 5, minHeight: 132 };
+const stageCardActive: CSSProperties = { borderColor: "var(--asc-primary)", boxShadow: "inset 0 3px 0 var(--asc-primary)" };
+const stageCardComplete: CSSProperties = { borderColor: "var(--asc-success)" };
 const stageHeader: CSSProperties = { display: "flex", justifyContent: "space-between", gap: 6, alignItems: "center" };
-const stageNo: CSSProperties = { color: "#6b7280", fontSize: 12, fontWeight: 950 };
+const stageNo: CSSProperties = { color: "var(--asc-text-muted)", fontSize: 12, fontWeight: 950 };
 const stageTitle: CSSProperties = { margin: 0, fontSize: 15, fontWeight: 950 };
 const stageBody: CSSProperties = { display: "grid", alignContent: "start", gap: 6, minWidth: 0 };
-const stageMainText: CSSProperties = { margin: 0, color: "#111827", fontSize: 14, fontWeight: 950 };
-const warningText: CSSProperties = { margin: 0, color: "#92400e", fontSize: 13, fontWeight: 800 };
+const stageMainText: CSSProperties = { margin: 0, color: "var(--asc-text)", fontSize: 14, fontWeight: 950 };
+const warningText: CSSProperties = { margin: 0, color: "var(--asc-warning-text)", fontSize: 13, fontWeight: 800 };
 const workflowActionRow: CSSProperties = { display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" };
 const resultMetricGrid: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 5 };
 const wrongQuestionList: CSSProperties = { display: "flex", flexWrap: "wrap", gap: 5 };
-const wrongQuestionPill: CSSProperties = { border: "1px solid #fecaca", borderRadius: 999, background: "#fef2f2", color: "#b91c1c", padding: "4px 7px", fontSize: 12, fontWeight: 900 };
+const wrongQuestionPill: CSSProperties = { border: "1px solid var(--asc-danger)", borderRadius: 999, background: "var(--asc-danger-soft)", color: "var(--asc-danger)", padding: "4px 7px", fontSize: 12, fontWeight: 900 };
 const remedialList: CSSProperties = { display: "flex", flexWrap: "wrap", gap: 5 };
-const remedialPill: CSSProperties = { border: "1px solid #fde68a", borderRadius: 999, background: "#fffbeb", color: "#92400e", padding: "4px 7px", fontSize: 12, fontWeight: 900 };
-const eyebrow: CSSProperties = { margin: 0, color: "#2563eb", fontSize: 12, fontWeight: 950 };
-const title: CSSProperties = { margin: "3px 0", fontSize: 25, fontWeight: 950 };
-const desc: CSSProperties = { margin: 0, color: "#6b7280" };
-const newButton: CSSProperties = { background: "#111827", color: "#fff", borderRadius: 8, padding: "10px 14px", textDecoration: "none", fontWeight: 950, whiteSpace: "nowrap" };
-const filterBar: CSSProperties = { display: "grid", gridTemplateColumns: "minmax(220px, 1fr) 150px 150px 150px 150px 100px auto auto", gap: 8, background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, padding: 10 };
-const filterInput: CSSProperties = { border: "1px solid #d1d5db", borderRadius: 7, padding: "8px 9px", minWidth: 0 };
+const remedialPill: CSSProperties = { border: "1px solid var(--asc-warning)", borderRadius: 999, background: "var(--asc-warning-soft)", color: "var(--asc-warning-text)", padding: "4px 7px", fontSize: 12, fontWeight: 900 };
+const eyebrow: CSSProperties = { margin: 0, color: "var(--asc-primary)", fontSize: 12, fontWeight: 950 };
+const title: CSSProperties = { margin: "2px 0", fontSize: 23, fontWeight: 950 };
+const desc: CSSProperties = { margin: 0, color: "var(--asc-text-muted)", fontSize: 13 };
+const newButton: CSSProperties = { background: "var(--asc-primary)", color: "#fff", border: "1px solid var(--asc-primary)", borderRadius: "var(--asc-radius-lg)", padding: "8px 12px", textDecoration: "none", fontWeight: 950, whiteSpace: "nowrap" };
+const filterBar: CSSProperties = { display: "grid", gridTemplateColumns: "minmax(220px, 1fr) 150px 150px 150px 150px 100px auto auto", gap: 6, background: "var(--asc-surface)", border: "1px solid var(--asc-border)", borderRadius: "var(--asc-radius-lg)", padding: 8 };
+const filterInput: CSSProperties = { border: "1px solid var(--asc-border)", borderRadius: "var(--asc-radius-md)", padding: "7px 8px", minWidth: 0, color: "var(--asc-text)" };
 const filterSelect: CSSProperties = { ...filterInput };
-const card: CSSProperties = { background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, padding: 14 };
-const sectionHead: CSSProperties = { display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", marginBottom: 12 };
-const sectionTitle: CSSProperties = { margin: 0, fontSize: 18, fontWeight: 950 };
-const muted: CSSProperties = { margin: 0, color: "#6b7280", fontSize: 13 };
-const tableWrap: CSSProperties = { overflow: "auto", border: "1px solid #e5e7eb", borderRadius: 8 };
+const card: CSSProperties = { background: "var(--asc-surface)", border: "1px solid var(--asc-border)", borderRadius: "var(--asc-radius-lg)", padding: 10 };
+const sectionHead: CSSProperties = { display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 8 };
+const sectionTitle: CSSProperties = { margin: 0, fontSize: 16, fontWeight: 950 };
+const muted: CSSProperties = { margin: 0, color: "var(--asc-text-muted)", fontSize: 13 };
+const tableWrap: CSSProperties = { overflow: "auto", border: "1px solid var(--asc-border)", borderRadius: "var(--asc-radius-lg)" };
 const table: CSSProperties = { width: "100%", borderCollapse: "collapse", fontSize: 13 };
-const th: CSSProperties = { textAlign: "left", padding: "9px 10px", background: "#f3f4f6", borderBottom: "1px solid #d1d5db", whiteSpace: "nowrap" };
-const td: CSSProperties = { padding: "9px 10px", borderBottom: "1px solid #f3f4f6", verticalAlign: "top", whiteSpace: "nowrap" };
-const subText: CSSProperties = { color: "#6b7280", fontSize: 12, marginTop: 3 };
-const selectedRow: CSSProperties = { background: "#eff6ff" };
-const emptyCell: CSSProperties = { padding: 34, textAlign: "center", color: "#6b7280" };
-const resultButton: CSSProperties = { color: "#1d4ed8", fontWeight: 950, textDecoration: "none" };
+const th: CSSProperties = { textAlign: "left", padding: "9px 10px", background: "var(--asc-bg-subtle)", borderBottom: "1px solid var(--asc-border)", whiteSpace: "nowrap" };
+const td: CSSProperties = { padding: "9px 10px", borderBottom: "1px solid var(--asc-border)", verticalAlign: "top", whiteSpace: "nowrap" };
+const subText: CSSProperties = { color: "var(--asc-text-muted)", fontSize: 12, marginTop: 3 };
+const selectedRow: CSSProperties = { background: "var(--asc-primary-soft)" };
+const emptyCell: CSSProperties = { padding: 20, textAlign: "center", color: "var(--asc-text-muted)" };
+const resultButton: CSSProperties = { color: "var(--asc-primary-hover)", fontWeight: 950, textDecoration: "none" };
 const actionLinks: CSSProperties = { display: "inline-flex", gap: 8, alignItems: "center", whiteSpace: "nowrap" };
 const inlineDeleteForm: CSSProperties = { margin: 0 };
-const smallButton: CSSProperties = { border: "1px solid #d1d5db", borderRadius: 7, background: "#111827", color: "#fff", padding: "8px 10px", fontWeight: 900, cursor: "pointer", textDecoration: "none" };
-const lightButton: CSSProperties = { ...smallButton, background: "#fff", color: "#111827", textAlign: "center" };
-const primaryButton: CSSProperties = { border: 0, borderRadius: 8, background: "#111827", color: "#fff", padding: "10px 12px", fontWeight: 950, cursor: "pointer" };
-const secondaryButton: CSSProperties = { border: "1px solid #d1d5db", borderRadius: 8, background: "#fff", color: "#111827", padding: "9px 11px", fontWeight: 900, cursor: "pointer" };
-const badge: CSSProperties = { display: "inline-flex", alignItems: "center", borderRadius: 999, padding: "3px 8px", background: "#f3f4f6", color: "#374151", fontWeight: 900, fontSize: 12 };
+const smallButton: CSSProperties = { border: "1px solid var(--asc-primary)", borderRadius: "var(--asc-radius-md)", background: "var(--asc-primary)", color: "#fff", padding: "8px 10px", fontWeight: 900, cursor: "pointer", textDecoration: "none" };
+const lightButton: CSSProperties = { ...smallButton, borderColor: "var(--asc-border-strong)", background: "var(--asc-bg)", color: "var(--asc-text)", textAlign: "center" };
+const primaryButton: CSSProperties = { border: "1px solid var(--asc-primary)", borderRadius: "var(--asc-radius-lg)", background: "var(--asc-primary)", color: "#fff", padding: "10px 12px", fontWeight: 950, cursor: "pointer" };
+const secondaryButton: CSSProperties = { border: "1px solid var(--asc-border-strong)", borderRadius: "var(--asc-radius-lg)", background: "var(--asc-bg)", color: "var(--asc-text)", padding: "9px 11px", fontWeight: 900, cursor: "pointer" };
+const badge: CSSProperties = { display: "inline-flex", alignItems: "center", borderRadius: 999, padding: "3px 8px", background: "var(--asc-bg-subtle)", color: "var(--asc-text-subtle)", fontWeight: 900, fontSize: 12 };
 const toneStyles: Record<Tone, CSSProperties> = {
   gray: { background: "#f3f4f6", color: "#374151" },
-  blue: { background: "#dbeafe", color: "#1d4ed8" },
+  blue: { background: "#e8f0fe", color: "#083891" },
   green: { background: "#dcfce7", color: "#047857" },
   yellow: { background: "#fef3c7", color: "#92400e" },
   red: { background: "#fee2e2", color: "#b91c1c" },
@@ -1567,16 +1567,44 @@ const miniStack: CSSProperties = { display: "grid", gridTemplateColumns: "110px 
 const miniInput: CSSProperties = { border: "1px solid #d1d5db", borderRadius: 6, padding: "6px 7px", minWidth: 0, fontSize: 12 };
 const tinyButton: CSSProperties = { ...smallButton, padding: "6px 8px", fontSize: 12 };
 const dangerText: CSSProperties = { color: "#b91c1c", fontWeight: 800 };
-const sheetBackdrop: CSSProperties = { position: "fixed", inset: 0, zIndex: 40, background: "rgba(15,23,42,.28)", display: "flex", justifyContent: "flex-end" };
-const sheet: CSSProperties = { width: 440, maxWidth: "94vw", height: "100vh", background: "#fff", boxShadow: "-18px 0 40px rgba(15,23,42,.18)", padding: 16, overflow: "auto" };
-const wideSheet: CSSProperties = { width: "min(1500px, 96vw)" };
-const sheetHeader: CSSProperties = { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, position: "sticky", top: 0, zIndex: 2, background: "#fff", paddingBottom: 12, borderBottom: "1px solid #e5e7eb", marginBottom: 14 };
-const sheetSection: CSSProperties = { border: "1px solid #e5e7eb", borderRadius: 10, padding: 12, marginBottom: 12 };
+const sheetBackdrop: CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  zIndex: 40,
+  background: "rgba(15,23,42,.42)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: 16,
+  overflow: "auto",
+};
+const sheet: CSSProperties = {
+  width: "min(760px, calc(100vw - 32px))",
+  maxHeight: "calc(100vh - 32px)",
+  background: "#fff",
+  border: "1px solid #e5e7eb",
+  borderRadius: 12,
+  boxShadow: "0 24px 70px rgba(15,23,42,.28)",
+  overflow: "hidden",
+  display: "grid",
+  gridTemplateRows: "auto minmax(0, 1fr)",
+};
+const wideSheet: CSSProperties = { width: "min(1500px, calc(100vw - 40px))" };
+const sheetHeader: CSSProperties = { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, background: "#fff", padding: "12px 14px", borderBottom: "1px solid #e5e7eb" };
+const sheetBody: CSSProperties = { padding: 12, overflow: "auto", minHeight: 0 };
+const sheetSection: CSSProperties = { border: "1px solid #e5e7eb", borderRadius: 8, padding: 10, marginBottom: 10 };
 const sheetTitle: CSSProperties = { margin: "0 0 10px", fontSize: 16, fontWeight: 950 };
 const stack: CSSProperties = { display: "grid", gap: 9 };
 const input: CSSProperties = { width: "100%", boxSizing: "border-box", border: "1px solid #d1d5db", borderRadius: 7, padding: "9px 10px", minWidth: 0 };
 const twoCols: CSSProperties = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 };
-const studentReviewGrid: CSSProperties = { display: "grid", gridTemplateColumns: "220px minmax(320px, .9fr) minmax(360px, 1.1fr)", gap: 10, alignItems: "stretch", minHeight: "calc(100vh - 100px)" };
+const studentReviewGrid: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "220px minmax(320px, .9fr) minmax(360px, 1.1fr)",
+  gap: 10,
+  alignItems: "stretch",
+  height: "min(700px, calc(100vh - 176px))",
+  minHeight: 380,
+};
 const reviewStudentPane: CSSProperties = { ...card, display: "grid", gridTemplateRows: "auto auto 1fr", minHeight: 0 };
 const reviewPreviewPane: CSSProperties = { ...card, minWidth: 0, minHeight: 0 };
 const reviewAnswerPane: CSSProperties = { display: "grid", gridTemplateRows: "auto auto 1fr", gap: 10, minWidth: 0, minHeight: 0 };
@@ -1584,7 +1612,7 @@ const studentNavButtons: CSSProperties = { display: "grid", gridTemplateColumns:
 const disabledNav: CSSProperties = { ...secondaryButton, opacity: .45, textAlign: "center", cursor: "default" };
 const reviewStudentList: CSSProperties = { display: "grid", gap: 6, overflow: "auto", paddingRight: 2 };
 const reviewStudentItem: CSSProperties = { border: "1px solid #e5e7eb", borderRadius: 8, padding: 9, textDecoration: "none", color: "#111827", background: "#fff", display: "grid", gap: 3 };
-const reviewStudentSelected: CSSProperties = { borderColor: "#2563eb", boxShadow: "inset 3px 0 0 #2563eb", background: "#eff6ff" };
+const reviewStudentSelected: CSSProperties = { borderColor: "#0b50d0", boxShadow: "inset 3px 0 0 #0b50d0", background: "#e8f0fe" };
 const reviewStudentNeedsReview: CSSProperties = { background: "#fffbeb" };
 const reviewStudentName: CSSProperties = { fontSize: 13, fontWeight: 950 };
 const reviewStudentMeta: CSSProperties = { fontSize: 12, color: "#6b7280", fontWeight: 800 };
@@ -1594,11 +1622,11 @@ const lowQuestionItem: CSSProperties = { display: "inline-flex", alignItems: "ce
 const reviewInlineForms: CSSProperties = { display: "grid", gap: 6, marginTop: 8 };
 const reviewInlineForm: CSSProperties = { display: "grid", gridTemplateColumns: "1fr 1.2fr auto", gap: 6, alignItems: "center" };
 const answerReviewForm: CSSProperties = { ...card, display: "grid", gap: 8, minHeight: 0 };
-const reviewTableWrap: CSSProperties = { ...tableWrap, maxHeight: "calc(100vh - 420px)", minHeight: 300 };
+const reviewTableWrap: CSSProperties = { ...tableWrap, maxHeight: "calc(100vh - 400px)", minHeight: 240 };
 const reviewFooter: CSSProperties = { display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: 8, alignItems: "center" };
 const correctPill: CSSProperties = { ...badge, background: "#dcfce7", color: "#047857" };
 const wrongPill: CSSProperties = { ...badge, background: "#fee2e2", color: "#b91c1c" };
-const emptyBox: CSSProperties = { border: "1px dashed #d1d5db", borderRadius: 8, padding: 28, textAlign: "center", color: "#6b7280" };
+const emptyBox: CSSProperties = { border: "1px dashed #d1d5db", borderRadius: 8, padding: 16, textAlign: "center", color: "#6b7280" };
 const divider: CSSProperties = { height: 1, background: "#e5e7eb", margin: "10px 0" };
 const smallTitle: CSSProperties = { margin: "0 0 10px", fontSize: 15, fontWeight: 950 };
 const answerGrid: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(5, minmax(120px, 1fr))", gap: 6, maxHeight: 260, overflow: "auto", padding: 4 };
