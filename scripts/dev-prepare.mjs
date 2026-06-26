@@ -4,8 +4,10 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
-const prismaCli = join(root, "node_modules", "prisma", "build", "index.js");
-const nextCli = join(root, "node_modules", "next", "dist", "bin", "next");
+const nodeModules = join(root, "node_modules");
+const nextPackage = join(nodeModules, "next", "package.json");
+const prismaPackage = join(nodeModules, "prisma", "package.json");
+const prismaClientPackage = join(nodeModules, "@prisma", "client", "package.json");
 const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
 
 function hasGeneratedPrismaClient() {
@@ -40,18 +42,30 @@ function run(command, args, options = {}) {
 }
 
 function ensureDependencies() {
-  if (existsSync(prismaCli) && existsSync(nextCli)) return;
+  if (existsSync(nextPackage) && existsSync(prismaPackage) && existsSync(prismaClientPackage)) return;
 
   console.log("node_modules is missing or incomplete. Running npm install before starting dev server...");
-  run(npmCommand, ["install"]);
+  runNpm(["install"]);
 
-  if (!existsSync(prismaCli) || !existsSync(nextCli)) {
+  if (!existsSync(nextPackage) || !existsSync(prismaPackage) || !existsSync(prismaClientPackage)) {
     console.error("Dependencies are still missing after npm install. Please remove node_modules and run npm install again.");
     process.exit(1);
   }
 }
 
+function runNpm(args, options = {}) {
+  if (process.platform === "win32") {
+    run("cmd.exe", ["/d", "/s", "/c", npmCommand, ...args], options);
+    return;
+  }
+  run(npmCommand, args, options);
+}
+
+function runPrisma(args) {
+  runNpm(["exec", "--", "prisma", ...args], { allowLockedPrismaEngine: true });
+}
+
 run(process.execPath, ["scripts/ensure-dev-env.mjs"]);
 ensureDependencies();
-run(process.execPath, [prismaCli, "generate", "--schema=prisma/schema.prisma"], { allowLockedPrismaEngine: true });
-run(process.execPath, [prismaCli, "migrate", "deploy", "--schema=prisma/schema.prisma"]);
+runPrisma(["generate", "--schema=prisma/schema.prisma"]);
+runPrisma(["migrate", "deploy", "--schema=prisma/schema.prisma"]);

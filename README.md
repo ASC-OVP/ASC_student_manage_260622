@@ -1,5 +1,17 @@
 # ASC Student Manage
 
+## GitHub Codespaces Quick Start
+
+Codespaces creates `.env`, installs missing dependencies, generates Prisma Client, and applies SQLite migrations through `npm run dev:prepare`.
+
+Run:
+
+```bash
+npm run dev
+```
+
+Then open the forwarded port `3000` URL.
+
 ASC 학원 운영 보드입니다. Next.js, Prisma, SQLite를 사용합니다.
 
 ## GitHub Codespaces에서 실행
@@ -7,7 +19,6 @@ ASC 학원 운영 보드입니다. Next.js, Prisma, SQLite를 사용합니다.
 Codespaces 터미널에서 아래 순서로 실행하면 됩니다.
 
 ```bash
-npm ci
 npm run dev
 ```
 
@@ -23,7 +34,6 @@ npm run dev
 ## 로컬 실행
 
 ```bash
-npm ci
 npm run dev
 ```
 
