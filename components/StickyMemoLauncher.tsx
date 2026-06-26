@@ -58,6 +58,7 @@ export default function StickyMemoLauncher({ memos }: Props) {
   const [buttonSize, setButtonSize] = useState<ElementSize>(BUTTON_FALLBACK_SIZE);
   const [panelSize, setPanelSize] = useState<ElementSize>(PANEL_FALLBACK_SIZE);
   const [dragging, setDragging] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const launcherRef = useRef<HTMLButtonElement | null>(null);
   const panelRef = useRef<HTMLElement | null>(null);
   const dragRef = useRef<DragState | null>(null);
@@ -86,6 +87,7 @@ export default function StickyMemoLauncher({ memos }: Props) {
       setViewport(nextViewport);
       setButtonSize(measuredButtonSize);
       setPosition(clampPosition(initialPosition, nextViewport, measuredButtonSize));
+      setMounted(true);
     };
 
     const handleResize = () => {
@@ -126,6 +128,8 @@ export default function StickyMemoLauncher({ memos }: Props) {
       window.removeEventListener("resize", measurePanel);
     };
   }, [open, memos.length]);
+
+  if (!mounted) return null;
 
   const currentButtonPosition = position ?? getFallbackButtonPosition();
   const panelPosition = clampPosition(currentButtonPosition, viewport, panelSize);
