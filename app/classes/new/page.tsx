@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import type { CSSProperties } from "react";
-import { createClassGroupAction } from "@/app/classes/actions";
 import { canManageClassGroups } from "@/lib/classGroups";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -35,7 +34,7 @@ export default async function NewClassPage() {
           </div>
         </header>
 
-        <form action={createClassGroupAction} style={form}>
+        <form action="/api/classes/create" method="post" style={form}>
           <label style={label}>
             반 이름
             <input name="name" required placeholder="예: 고1 수학 내신반" style={input} autoFocus />

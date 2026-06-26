@@ -12,6 +12,11 @@ import { prisma } from "@/lib/prisma";
 const CLASS_GROUP_STATUSES = Object.values(ClassGroupStatus) as ClassGroupStatus[];
 
 export async function createClassGroupAction(formData: FormData) {
+  const createdClassGroupId = await createClassGroupFromFormData(formData);
+  redirect(createdClassGroupId ? `/classes?classGroupId=${createdClassGroupId}` : "/classes");
+}
+
+export async function createClassGroupFromFormData(formData: FormData) {
   const user = await requireUser();
   if (!canManageClassGroups(user.role)) {
     throw new Error("반을 관리할 권한이 없습니다.");
@@ -75,7 +80,7 @@ export async function createClassGroupAction(formData: FormData) {
   });
 
   revalidateClassPaths(createdClassGroupId);
-  redirect(createdClassGroupId ? `/classes?classGroupId=${createdClassGroupId}` : "/classes");
+  return createdClassGroupId;
 }
 
 export async function updateClassGroupAction(formData: FormData) {
