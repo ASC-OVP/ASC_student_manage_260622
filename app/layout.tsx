@@ -1,7 +1,7 @@
-import type { Metadata } from "next";
+﻿import type { Metadata } from "next";
 import "./globals.css";
 import AppFrame from "@/components/AppFrame";
-import StickyMemoLauncher from "@/components/StickyMemoLauncher";
+import StickyMemoLauncher from "@/features/memos/components/StickyMemoLauncher";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
@@ -53,3 +53,4 @@ function formatShortDateTime(date: Date) {
     minute: "2-digit",
   }).format(date);
 }
+

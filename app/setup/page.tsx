@@ -1,5 +1,5 @@
-import Link from "next/link";
 import type { CSSProperties } from "react";
+import { Button, ButtonLink, Input, Notice, PageHeader } from "@/components/ui";
 
 type Props = { searchParams: Promise<{ error?: string }> };
 
@@ -9,41 +9,28 @@ export default async function SetupPage({ searchParams }: Props) {
   return (
     <main style={page}>
       <section style={card}>
-        <h1 style={title}>강사팀 등록</h1>
-        <p style={desc}>팀마다 별도 공간을 만들고, 로그인할 때 강사팀 코드를 입력해 들어갑니다.</p>
-        {params.error === "empty" && <p style={error}>모든 항목을 입력해주세요.</p>}
-        {params.error === "duplicate" && <p style={error}>이미 사용 중인 강사팀 코드입니다.</p>}
-        {params.error === "server" && (
-          <p style={error}>강사팀 등록 중 오류가 났습니다. Codespace DB 초기화 후 다시 시도해주세요.</p>
-        )}
+        <PageHeader
+          eyebrow="초기 설정"
+          title="학원 등록"
+          description="학원별 운영 공간을 만들고 로그인에 사용할 관리자 계정을 등록합니다."
+        />
+
+        {params.error === "empty" && <Notice tone="danger">모든 항목을 입력하세요.</Notice>}
+        {params.error === "duplicate" && <Notice tone="danger">이미 사용 중인 학원 코드입니다.</Notice>}
+        {params.error === "server" && <Notice tone="danger">학원 등록 중 오류가 발생했습니다. DB 초기화 후 다시 시도하세요.</Notice>}
 
         <form action="/api/setup" method="post" style={form}>
-          <label style={label}>
-            강사팀 이름
-            <input name="academyName" placeholder="예: 숙명여고 과학팀" required style={input} />
-          </label>
-          <label style={label}>
-            강사팀 코드
-            <input name="academyCode" placeholder="예: sm-science" required style={input} />
-          </label>
-          <label style={label}>
-            관리자 이름
-            <input name="name" placeholder="예: 곽승헌" required style={input} />
-          </label>
-          <label style={label}>
-            아이디
-            <input name="loginId" placeholder="예: admin" required style={input} />
-          </label>
-          <label style={label}>
-            비밀번호
-            <input name="password" type="password" placeholder="예: 1234" required style={input} />
-          </label>
-          <button style={button}>강사팀 등록</button>
+          <Input name="academyName" label="학원 이름" placeholder="예: 서명고 과학학원" required />
+          <Input name="academyCode" label="학원 코드" placeholder="예: sm-science" required helperText="로그인할 때 함께 입력하는 고유 코드입니다." />
+          <Input name="name" label="관리자 이름" placeholder="예: 곽승호" required />
+          <Input name="loginId" label="아이디" placeholder="예: admin" required />
+          <Input name="password" type="password" label="비밀번호" placeholder="예: 1234" required />
+          <Button type="submit" fullWidth>학원 등록</Button>
         </form>
 
-        <Link href="/login" style={link}>
-          이미 등록한 강사팀으로 로그인
-        </Link>
+        <ButtonLink href="/login" variant="tertiary" fullWidth>
+          이미 등록한 학원으로 로그인
+        </ButtonLink>
       </section>
     </main>
   );
@@ -51,26 +38,21 @@ export default async function SetupPage({ searchParams }: Props) {
 
 const page: CSSProperties = {
   minHeight: "100vh",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  background: "linear-gradient(135deg,#083891,#312e81)",
-  color: "#111827",
+  display: "grid",
+  placeItems: "center",
+  background: "var(--asc-bg-subtle)",
+  color: "var(--asc-text)",
   padding: 24,
 };
 const card: CSSProperties = {
   width: "100%",
-  maxWidth: 460,
-  background: "#fff",
-  borderRadius: 22,
-  padding: 32,
-  boxShadow: "0 18px 50px rgba(15,23,42,.24)",
+  maxWidth: 500,
+  display: "grid",
+  gap: 14,
+  background: "var(--asc-surface)",
+  border: "1px solid var(--asc-border)",
+  borderRadius: "var(--asc-radius-xl)",
+  padding: 24,
+  boxShadow: "var(--asc-shadow-panel)",
 };
-const title: CSSProperties = { fontSize: 32, fontWeight: 950, margin: "0 0 8px" };
-const desc: CSSProperties = { margin: "0 0 22px", color: "#6b7280", lineHeight: 1.6 };
-const form: CSSProperties = { display: "flex", flexDirection: "column", gap: 14 };
-const label: CSSProperties = { display: "flex", flexDirection: "column", gap: 8, fontWeight: 900 };
-const input: CSSProperties = { padding: "12px", border: "1px solid #d1d5db", borderRadius: 12 };
-const button: CSSProperties = { padding: "13px", border: 0, borderRadius: 12, background: "#111827", color: "#fff", fontWeight: 950 };
-const error: CSSProperties = { background: "#fee2e2", color: "#991b1b", padding: 12, borderRadius: 12, fontWeight: 900 };
-const link: CSSProperties = { display: "block", marginTop: 16, textAlign: "center", color: "var(--asc-primary-deep)", fontWeight: 950, textDecoration: "none" };
+const form: CSSProperties = { display: "grid", gap: 12 };

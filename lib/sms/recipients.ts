@@ -7,14 +7,18 @@ export type MessageStudent = {
   name: string;
   phone?: string | null;
   parentPhone?: string | null;
+  parentName?: string | null;
   className?: string | null;
+  schoolName?: string | null;
+  grade?: string | null;
+  templateData?: TemplateContext;
 };
 
 export type SkippedRecipient = {
   studentId: string;
   studentName: string;
   recipientType: MessageRecipientType;
-  reason: "NO_PHONE" | "DUPLICATE" | "CONSENT_BLOCKED";
+  reason: "NO_PHONE" | "DUPLICATE" | "CONSENT_BLOCKED" | "MARKETING_OPT_OUT";
   phone?: string | null;
 };
 
@@ -25,7 +29,9 @@ export type RecipientPreviewResult = {
   missingPhoneCount: number;
   blockedByConsentCount: number;
   unknownVariables: string[];
+  missingVariables: Array<{ localId: string; receiverName: string; variables: string[] }>;
   maxMessageLength: number;
+  maxByteLength: number;
 };
 
 type BuildRecipientParams = {
@@ -34,6 +40,9 @@ type BuildRecipientParams = {
   body: string;
   context: TemplateContext;
   blockedNormalizedPhones?: Set<string>;
+  isMarketing?: boolean;
+  subject?: string;
+  unsubPhone?: string | null;
 };
 
 export function buildMessageRecipients({
@@ -42,15 +51,20 @@ export function buildMessageRecipients({
   body,
   context,
   blockedNormalizedPhones = new Set(),
+  isMarketing = false,
+  subject,
+  unsubPhone,
 }: BuildRecipientParams): RecipientPreviewResult {
   const recipients: SmsRecipientPayload[] = [];
   const skipped: SkippedRecipient[] = [];
   const seenPhones = new Set<string>();
   const unknownVariables = new Set<string>();
+  const missingVariables: RecipientPreviewResult["missingVariables"] = [];
   let duplicateCount = 0;
   let missingPhoneCount = 0;
   let blockedByConsentCount = 0;
   let maxMessageLength = 0;
+  let maxByteLength = 0;
 
   for (const student of students) {
     const candidateTypes = recipientTypesForTarget(targetType);
@@ -60,13 +74,7 @@ export function buildMessageRecipients({
 
       if (!normalizedPhone) {
         missingPhoneCount += 1;
-        skipped.push({
-          studentId: student.id,
-          studentName: student.name,
-          recipientType,
-          reason: "NO_PHONE",
-          phone: rawPhone,
-        });
+        skipped.push({ studentId: student.id, studentName: student.name, recipientType, reason: "NO_PHONE", phone: rawPhone });
         continue;
       }
 
@@ -76,7 +84,7 @@ export function buildMessageRecipients({
           studentId: student.id,
           studentName: student.name,
           recipientType,
-          reason: "CONSENT_BLOCKED",
+          reason: isMarketing ? "MARKETING_OPT_OUT" : "CONSENT_BLOCKED",
           phone: rawPhone,
         });
         continue;
@@ -84,35 +92,37 @@ export function buildMessageRecipients({
 
       if (seenPhones.has(normalizedPhone)) {
         duplicateCount += 1;
-        skipped.push({
-          studentId: student.id,
-          studentName: student.name,
-          recipientType,
-          reason: "DUPLICATE",
-          phone: rawPhone,
-        });
+        skipped.push({ studentId: student.id, studentName: student.name, recipientType, reason: "DUPLICATE", phone: rawPhone });
         continue;
       }
-
       seenPhones.add(normalizedPhone);
 
-      const rendered = renderMessageTemplate(body, {
-        ...context,
-        studentName: student.name,
-        className: context.className || student.className || "",
-      });
+      const receiverName = recipientType === "STUDENT" ? student.name : student.parentName || `${student.name} 학부모님`;
+      const templateData = buildTemplateData(student, recipientType, context, receiverName);
+      const rendered = renderMessageTemplate(body, templateData);
       for (const variable of rendered.unknownVariables) unknownVariables.add(variable);
+      if (rendered.missingVariables.length > 0) {
+        missingVariables.push({ localId: `${student.id}:${recipientType}:${normalizedPhone}`, receiverName, variables: rendered.missingVariables });
+      }
       maxMessageLength = Math.max(maxMessageLength, rendered.length);
+      maxByteLength = Math.max(maxByteLength, rendered.byteLength);
 
       recipients.push({
         localId: `${student.id}:${recipientType}:${normalizedPhone}`,
         studentId: student.id,
         studentName: student.name,
         recipientType,
-        receiverName: receiverName(student.name, recipientType),
+        receiverName,
         phone: formatPhoneNumber(rawPhone),
         normalizedPhone,
         messageText: rendered.text,
+        templateData: stringifyTemplateData(templateData),
+        missingVariables: rendered.missingVariables,
+        messageKind: rendered.messageKind,
+        byteLength: rendered.byteLength,
+        subject,
+        isMarketing,
+        unsubPhone,
       });
     }
   }
@@ -124,17 +134,45 @@ export function buildMessageRecipients({
     missingPhoneCount,
     blockedByConsentCount,
     unknownVariables: [...unknownVariables],
+    missingVariables,
     maxMessageLength,
+    maxByteLength,
   };
 }
 
-export function recipientTypesForTarget(targetType: MessageTargetType): MessageRecipientType[] {
-  if (targetType === "STUDENT") return ["STUDENT"];
-  if (targetType === "GUARDIAN") return ["GUARDIAN"];
-  return ["STUDENT", "GUARDIAN"];
+export function buildTemplateData(student: MessageStudent, recipientType: MessageRecipientType, context: TemplateContext, receiverName?: string): TemplateContext {
+  const parentName = student.parentName || `${student.name} 학부모님`;
+  const merged: TemplateContext = {
+    ...context,
+    ...student.templateData,
+    studentName: student.name,
+    parentName,
+    parentNameSubject: withKoreanParticle(parentName, "이", "가"),
+    parentNameTopic: withKoreanParticle(parentName, "은", "는"),
+    className: student.className || String(student.templateData?.className ?? context.className ?? ""),
+    level: String(student.templateData?.level ?? context.level ?? student.grade ?? ""),
+  };
+  if (recipientType === "STUDENT") merged.parentName = receiverName || student.name;
+  return merged;
 }
 
-export function receiverName(studentName: string, recipientType: MessageRecipientType) {
-  if (recipientType === "GUARDIAN") return `${studentName} 학생 보호자님`;
-  return `${studentName} 학생`;
+function stringifyTemplateData(value: TemplateContext) {
+  const data: Record<string, string> = {};
+  for (const [key, raw] of Object.entries(value)) {
+    if (raw !== null && raw !== undefined) data[key] = String(raw);
+  }
+  return data;
+}
+
+function withKoreanParticle(value: string, consonantParticle: string, vowelParticle: string) {
+  if (!value) return "";
+  const last = value.trim().charCodeAt(value.trim().length - 1);
+  if (last < 0xac00 || last > 0xd7a3) return `${value}${vowelParticle}`;
+  return `${value}${(last - 0xac00) % 28 === 0 ? vowelParticle : consonantParticle}`;
+}
+
+function recipientTypesForTarget(targetType: MessageTargetType): MessageRecipientType[] {
+  if (targetType === "STUDENT") return ["STUDENT"];
+  if (targetType === "BOTH") return ["STUDENT", "GUARDIAN"];
+  return ["GUARDIAN"];
 }

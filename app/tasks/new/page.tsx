@@ -1,3 +1,3 @@
-import SimpleNewTaskPage from "./SimpleNewTaskPage";
+import TaskForm from "@/features/tasks/components/TaskForm";
 
-export default SimpleNewTaskPage;
+export default TaskForm;

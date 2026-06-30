@@ -1,3 +1,3 @@
-import SimpleTaskDetailPage from "./SimpleTaskDetailPage";
+import TaskDetailView from "@/features/tasks/components/TaskDetailView";
 
-export default SimpleTaskDetailPage;
+export default TaskDetailView;

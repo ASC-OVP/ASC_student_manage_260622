@@ -212,7 +212,7 @@ function formatRole(role: string) {
 }
 
 const sidebarStyle: CSSProperties = {
-  width: 220,
+  width: "var(--asc-sidebar-expanded)",
   minHeight: "100vh",
   background: "var(--asc-sidebar-bg)",
   color: "var(--asc-sidebar-active-text)",
@@ -226,7 +226,7 @@ const sidebarStyle: CSSProperties = {
   transition: "width 180ms ease, padding 180ms ease",
   borderRight: "1px solid rgba(255,255,255,.08)",
 };
-const sidebarCollapsedStyle: CSSProperties = { width: 56, padding: "10px 7px" };
+const sidebarCollapsedStyle: CSSProperties = { width: "var(--asc-sidebar-collapsed)", padding: "10px 7px" };
 const brandStyle: CSSProperties = { position: "relative", minHeight: 52, padding: "2px 32px 10px 6px", display: "flex", alignItems: "center" };
 const brandCollapsedStyle: CSSProperties = { position: "relative", minHeight: 36, padding: "0 0 8px", display: "grid", placeItems: "center" };
 const brandText: CSSProperties = { minWidth: 0 };
@@ -289,3 +289,4 @@ const userStyle: CSSProperties = { display: "flex", flexDirection: "column", gap
 const logoutStyle: CSSProperties = { display: "flex", alignItems: "center", gap: 10, color: "#fecaca", textDecoration: "none", fontWeight: 900, padding: "9px 6px", outline: "none", boxShadow: "none", borderRadius: 8 };
 const logoutIconStyle: CSSProperties = { ...iconStyle, background: "rgba(222,52,18,.12)", color: "#fecaca" };
 const logoutCollapsedStyle: CSSProperties = { ...logoutStyle, width: 32, justifyContent: "center", padding: 7, borderRadius: 8, background: "rgba(255,255,255,.06)" };
+

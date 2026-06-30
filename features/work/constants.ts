@@ -1,0 +1,1 @@
+export const WORK_SHIFT_STATUSES = ["SCHEDULED", "WORKED", "ABSENT", "CANCELLED"] as const;

@@ -1,5 +1,5 @@
-import SimpleTasksPage from "./SimpleTasksPage";
+import TaskList from "@/features/tasks/components/TaskList";
 
 export const dynamic = "force-dynamic";
 
-export default SimpleTasksPage;
+export default TaskList;
