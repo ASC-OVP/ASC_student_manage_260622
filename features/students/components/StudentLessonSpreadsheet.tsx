@@ -4794,74 +4794,9 @@ const fullscreenShell: CSSProperties = {
   boxShadow: "none",
 };
 
-const menuBar: CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: 6,
-  flexWrap: "wrap",
-  padding: "4px 8px",
-  borderBottom: "1px solid #e5e7eb",
-  background: "#f8fafc",
-  fontSize: 12,
-};
-
-const undoRedoGroup: CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 3,
-  marginRight: 4,
-};
-
-const undoRedoButton: CSSProperties = {
-  width: 28,
-  height: 28,
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  border: "1px solid #d1d5db",
-  borderRadius: 7,
-  background: "#ffffff",
-  color: "#111827",
-  fontSize: 18,
-  fontWeight: 800,
-  lineHeight: 1,
-  cursor: "pointer",
-};
-
 const disabledUndoRedoButton: CSSProperties = {
   opacity: 0.35,
   cursor: "not-allowed",
-};
-
-const menuItem: CSSProperties = {
-  position: "relative",
-};
-
-const menuPanel: CSSProperties = {
-  position: "absolute",
-  top: 24,
-  left: 0,
-  zIndex: 30,
-  display: "grid",
-  gap: 4,
-  minWidth: 180,
-  padding: 8,
-  border: "1px solid #d7dce5",
-  borderRadius: 8,
-  background: "#ffffff",
-  boxShadow: "0 14px 36px rgba(15, 23, 42, 0.16)",
-};
-
-const menuPanelButton: CSSProperties = {
-  height: 30,
-  padding: "0 10px",
-  border: "1px solid #d7dce5",
-  borderRadius: 7,
-  background: "#ffffff",
-  color: "#111827",
-  fontWeight: 700,
-  textAlign: "left",
-  cursor: "pointer",
 };
 
 const contextMenuPanel: CSSProperties = {
@@ -5277,10 +5212,6 @@ const smallPanelButton: CSSProperties = {
   fontSize: 11,
   fontWeight: 800,
   cursor: "pointer",
-};
-
-const toolbarSpacer: CSSProperties = {
-  flex: 1,
 };
 
 const activeToolbarButton: CSSProperties = {
