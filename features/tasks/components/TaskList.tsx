@@ -131,6 +131,22 @@ export default async function SimpleTasksPage({ searchParams }: Props = {}) {
   const completedToday = doneTasks.filter((task) => isToday(task.completedAt));
   const completionRate = sortedTasks.length ? Math.round((doneTasks.length / sortedTasks.length) * 100) : 0;
   const assigneeStats = buildAssigneeStats(sortedTasks);
+  const taskHeaderStats: Array<{ label: string; value: string; tone?: HeaderStatTone }> = isAssistant
+    ? [
+        { label: "오늘 할 일", value: `${todayTasks.length}개`, tone: todayTasks.length ? "warn" : "default" },
+        { label: "진행 중", value: `${inProgressTasks.length}개` },
+        { label: "기한 임박", value: `${dueSoonTasks.length}개`, tone: dueSoonTasks.length ? "warn" : "default" },
+        { label: "보류", value: `${holdTasks.length}개`, tone: "hold" },
+        { label: "완료", value: `${doneTasks.length}개` },
+      ]
+    : [
+        { label: "전체", value: `${sortedTasks.length}개` },
+        { label: "완료", value: `${doneTasks.length}개` },
+        { label: "미완료", value: `${incompleteTasks.length}개`, tone: incompleteTasks.length ? "warn" : "default" },
+        { label: "지연", value: `${overdueTasks.length}개`, tone: overdueTasks.length ? "danger" : "default" },
+        { label: "오늘 완료", value: `${completedToday.length}개` },
+        { label: "완료율", value: `${completionRate}%` },
+      ];
 
   return (
     <main style={page}>
@@ -138,7 +154,12 @@ export default async function SimpleTasksPage({ searchParams }: Props = {}) {
         <div style={header}>
           <PageHeader
             eyebrow="업무 관리"
-            title={isAssistant ? "내 업무 처리" : "업무 진행 현황"}
+            title={
+              <span style={titleWithStats}>
+                <span>{isAssistant ? "내 업무 처리" : "업무 진행 현황"}</span>
+                <HeaderStats items={taskHeaderStats} />
+              </span>
+            }
             description={
               isAssistant
                 ? "배정된 업무를 진행하고, 완료할 때 처리 메모와 증거를 남깁니다."
@@ -152,27 +173,6 @@ export default async function SimpleTasksPage({ searchParams }: Props = {}) {
               </div>
             }
           />
-        </div>
-
-        <div style={summaryGrid}>
-          {isAssistant ? (
-            <>
-              <Summary label="오늘 할 일" value={`${todayTasks.length}개`} tone={todayTasks.length ? "warn" : "default"} />
-              <Summary label="진행 중" value={`${inProgressTasks.length}개`} />
-              <Summary label="기한 임박" value={`${dueSoonTasks.length}개`} tone={dueSoonTasks.length ? "warn" : "default"} />
-              <Summary label="보류" value={`${holdTasks.length}개`} tone="hold" />
-              <Summary label="완료" value={`${doneTasks.length}개`} />
-            </>
-          ) : (
-            <>
-              <Summary label="전체 업무" value={`${sortedTasks.length}개`} />
-              <Summary label="완료 업무" value={`${doneTasks.length}개`} />
-              <Summary label="미완료 업무" value={`${incompleteTasks.length}개`} tone={incompleteTasks.length ? "warn" : "default"} />
-              <Summary label="지연 업무" value={`${overdueTasks.length}개`} tone={overdueTasks.length ? "danger" : "default"} />
-              <Summary label="오늘 완료" value={`${completedToday.length}개`} />
-              <Summary label="완료율" value={`${completionRate}%`} />
-            </>
-          )}
         </div>
 
         {!isAssistant && (
@@ -653,13 +653,26 @@ function MiniTask({ task }: { task: TaskRow }) {
   );
 }
 
-function Summary({ label, value, tone = "default" }: { label: string; value: string; tone?: "default" | "warn" | "hold" | "danger" }) {
+type HeaderStatTone = "default" | "warn" | "hold" | "danger";
+
+function HeaderStats({ items }: { items: Array<{ label: string; value: string; tone?: HeaderStatTone }> }) {
   return (
-    <div style={{ ...summaryCard, ...(tone === "warn" ? summaryWarn : {}), ...(tone === "hold" ? summaryHold : {}), ...(tone === "danger" ? summaryDanger : {}) }}>
-      <span>{label}</span>
-      <b>{value}</b>
-    </div>
+    <span style={headerStats} aria-label="업무 요약 통계">
+      {items.map((item) => (
+        <span key={item.label} style={headerStat}>
+          <span style={headerStatLabel}>{item.label}</span>
+          <b style={{ ...headerStatValue, ...headerStatValueByTone(item.tone) }}>{item.value}</b>
+        </span>
+      ))}
+    </span>
   );
+}
+
+function headerStatValueByTone(tone: HeaderStatTone = "default"): CSSProperties {
+  if (tone === "warn") return { color: "var(--asc-warning-text)" };
+  if (tone === "hold") return { color: "#6d28d9" };
+  if (tone === "danger") return { color: "var(--asc-danger)" };
+  return {};
 }
 
 function Panel({ title, right, children }: { title: string; right?: ReactNode; children: ReactNode }) {
@@ -928,14 +941,14 @@ function buildAssigneeStats(tasks: TaskRow[]) {
 const page: CSSProperties = { padding: 12, color: "var(--asc-text)", background: "var(--asc-bg-subtle)", minHeight: "100vh" };
 const container: CSSProperties = { width: "100%", maxWidth: "none", margin: 0, display: "grid", gap: 10 };
 const header: CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 };
+const titleWithStats: CSSProperties = { display: "inline-flex", alignItems: "center", gap: 14, flexWrap: "wrap", minWidth: 0 };
+const headerStats: CSSProperties = { display: "inline-flex", alignItems: "center", flexWrap: "wrap", gap: 0, paddingLeft: 12, borderLeft: "1px solid var(--asc-border)" };
+const headerStat: CSSProperties = { display: "inline-flex", alignItems: "baseline", gap: 4, padding: "0 10px", borderRight: "1px solid var(--asc-border)", lineHeight: 1.1 };
+const headerStatLabel: CSSProperties = { color: "var(--asc-text-muted)", fontSize: 12, fontWeight: 850, whiteSpace: "nowrap" };
+const headerStatValue: CSSProperties = { color: "var(--asc-text)", fontSize: 14, fontWeight: 950, whiteSpace: "nowrap" };
 const tabsWrap: CSSProperties = { display: "flex", gap: 5, flexWrap: "wrap", background: "var(--asc-surface)", border: "1px solid var(--asc-border)", borderRadius: "var(--asc-radius-lg)", padding: 6 };
 const tabStyle: CSSProperties = { borderRadius: "var(--asc-radius-md)", padding: "7px 10px", color: "var(--asc-text-subtle)", textDecoration: "none", fontWeight: 950, background: "var(--asc-bg)" };
 const activeTabStyle: CSSProperties = { ...tabStyle, color: "#fff", background: "var(--asc-primary)" };
-const summaryGrid: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8 };
-const summaryCard: CSSProperties = { background: "var(--asc-bg)", border: "1px solid var(--asc-border)", borderRadius: "var(--asc-radius-lg)", padding: 10, display: "flex", flexDirection: "column", gap: 4 };
-const summaryWarn: CSSProperties = { background: "var(--asc-warning-soft)", border: "1px solid var(--asc-warning)" };
-const summaryHold: CSSProperties = { background: "var(--asc-warning-soft)", border: "1px solid var(--asc-warning)" };
-const summaryDanger: CSSProperties = { background: "var(--asc-danger-soft)", border: "1px solid var(--asc-danger)" };
 const dashboardGrid: CSSProperties = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 };
 const workSplit: CSSProperties = { display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(320px, 380px)", gap: 10, alignItems: "start", position: "relative", overflow: "visible" };
 const stickyCalendarPanel: CSSProperties = { position: "sticky", top: 14, alignSelf: "start", minWidth: 0, height: "fit-content", zIndex: 3 };

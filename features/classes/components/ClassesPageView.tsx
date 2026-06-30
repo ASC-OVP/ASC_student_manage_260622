@@ -1,6 +1,7 @@
-﻿import type { CSSProperties } from "react";
-import { ButtonLink, PageHeader } from "@/components/ui";
-import ClassOpenCard from "@/features/classes/components/ClassOpenCard";
+import Link from "next/link";
+import type { CSSProperties } from "react";
+import { ButtonLink } from "@/components/ui";
+import ClassOpenRow from "@/features/classes/components/ClassOpenRow";
 import { buildClassStats } from "@/lib/classGroupStats";
 import {
   canManageClassGroups,
@@ -150,26 +151,28 @@ export default async function ClassesPage({ searchParams }: Props) {
     <main style={page}>
       <section style={container}>
         <div style={header}>
-          <PageHeader
-            eyebrow="반 관리"
-            title="수업 그룹 운영 보드"
-            description="반을 검색하고, 더블클릭해서 각 반의 상세 운영 화면으로 들어갑니다."
-            actions={
-              <div className="asc-action-group">
-                <ButtonLink href="/students" variant="tertiary" size="sm">학생 현황판</ButtonLink>
-                {canManage && <ButtonLink href="/classes/new" size="sm">반 추가</ButtonLink>}
+          <div style={headerLayout}>
+            <div style={headerText}>
+              <p style={eyebrow}>반 관리</p>
+              <div style={titleRow}>
+                <h1 style={pageTitle}>수업 그룹 운영 보드</h1>
+                <div style={compactStats} aria-label="반 운영 요약 통계">
+                  <SmallStat label="전체" value={`${rows.length}개`} />
+                  <SmallStat label="운영중" value={`${activeCount}개`} />
+                  <SmallStat label="학생" value={`${totalStudents}명`} />
+                  <SmallStat label="최근 평균" value={averageScore === null ? "-" : `${averageScore}점`} />
+                  <SmallStat label="출석률" value={averageAttendance === null ? "-" : `${averageAttendance}%`} />
+                </div>
               </div>
-            }
-          />
+              <p style={pageDescription}>반을 검색하고, 더블클릭해서 각 반의 상세 운영 화면으로 들어갑니다.</p>
+            </div>
+            <div className="asc-action-group" style={headerActions}>
+              <ButtonLink href="/students" variant="tertiary" size="sm">학생 현황판</ButtonLink>
+              {canManage && <ButtonLink href="/classes/new" size="sm">반 추가</ButtonLink>}
+            </div>
+          </div>
         </div>
 
-        <section style={summaryGrid}>
-          <Summary label="전체 반" value={`${rows.length}개`} />
-          <Summary label="운영중" value={`${activeCount}개`} />
-          <Summary label="배정 학생" value={`${totalStudents}명`} />
-          <Summary label="최근 평균" value={averageScore === null ? "-" : `${averageScore}점`} />
-          <Summary label="출석률" value={averageAttendance === null ? "-" : `${averageAttendance}%`} />
-        </section>
 
         <form className="asc-filter-bar" style={filterBar}>
           <input name="q" defaultValue={filters.q} placeholder="반 이름, 과목, 강사 검색" style={filterInput} />
@@ -193,7 +196,7 @@ export default async function ClassesPage({ searchParams }: Props) {
             <option value="ENDED">종료</option>
           </select>
           <button style={filterButton}>적용</button>
-          <a href="/classes" style={resetButton}>초기화</a>
+          <Link href="/classes" style={resetButton}>초기화</Link>
           <span style={filterCount}>{displayRows.length}개 반</span>
         </form>
 
@@ -201,46 +204,69 @@ export default async function ClassesPage({ searchParams }: Props) {
           <div style={panelHead}>
             <div>
               <h2 style={sectionTitle}>반 목록</h2>
-              <p style={muted}>카드를 한 번 누르면 포커스되고, 더블클릭하면 상세 화면으로 이동합니다.</p>
+              <p style={muted}>행을 더블클릭하거나 Enter를 누르면 반 상세 화면으로 이동합니다.</p>
             </div>
           </div>
-          <div style={classGrid}>
-            {displayRows.map((row) => {
-              const { classGroup, stats, effectiveStatus, lessonSignal } = row;
-              return (
-                <ClassOpenCard
-                  key={classGroup.id}
-                  href={`/classes/${classGroup.id}`}
-                  name={classGroup.name}
-                  meta={`${classGroup.subject || "과목 미지정"} / ${classGroup.grade || "학년 미지정"}`}
-                  statusLabel={classStatusLabel(effectiveStatus)}
-                  statusTone={classStatusTone(effectiveStatus)}
-                  teacherName={classGroup.teacher?.name ?? "-"}
-                  assistantName={assistantNames(classGroup)}
-                  studentCount={stats.studentCount}
-                  schedule={formatClassSchedule(classGroup)}
-                  latestLabel={lessonSignal.label}
-                  latestValue={lessonSignal.value}
-                  averageScore={stats.averageScore === null ? "-" : `${stats.averageScore}점`}
-                  attendanceRate={stats.attendanceRate === null ? "-" : `${stats.attendanceRate}%`}
-                />
-              );
-            })}
-            {rows.length === 0 && <Empty title="아직 등록된 반이 없습니다" body="상단의 반 추가 버튼으로 첫 반을 만들어 주세요." />}
-            {rows.length > 0 && displayRows.length === 0 && <Empty title="검색 결과가 없습니다" body="필터를 줄이거나 검색어를 바꿔 다시 확인해 주세요." />}
-          </div>
+          {displayRows.length > 0 ? (
+            <div style={tableWrap}>
+              <table style={classTable}>
+                <thead>
+                  <tr>
+                    <th style={th}>반</th>
+                    <th style={th}>상태</th>
+                    <th style={th}>담당 강사</th>
+                    <th style={th}>담당 조교</th>
+                    <th style={{ ...th, textAlign: "right" }}>학생</th>
+                    <th style={th}>요일/시간</th>
+                    <th style={th}>최근/다음 차시</th>
+                    <th style={{ ...th, textAlign: "right" }}>평균</th>
+                    <th style={{ ...th, textAlign: "right" }}>출석률</th>
+                    <th style={{ ...th, textAlign: "right" }}>과제율</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {displayRows.map((row) => {
+                    const { classGroup, stats, effectiveStatus, lessonSignal } = row;
+                    return (
+                      <ClassOpenRow
+                        key={classGroup.id}
+                        href={`/classes/${classGroup.id}`}
+                        name={classGroup.name}
+                        meta={`${classGroup.subject || "과목 미지정"} / ${classGroup.grade || "학년 미지정"}`}
+                        statusLabel={classStatusLabel(effectiveStatus)}
+                        statusTone={classStatusTone(effectiveStatus)}
+                        teacherName={classGroup.teacher?.name ?? "-"}
+                        assistantName={assistantNames(classGroup)}
+                        studentCount={stats.studentCount}
+                        schedule={formatClassSchedule(classGroup)}
+                        latestLabel={lessonSignal.label}
+                        latestValue={lessonSignal.value}
+                        averageScore={stats.averageScore === null ? "-" : `${stats.averageScore}점`}
+                        attendanceRate={stats.attendanceRate === null ? "-" : `${stats.attendanceRate}%`}
+                        assignmentRate={stats.assignmentCompletionRate === null ? "-" : `${stats.assignmentCompletionRate}%`}
+                      />
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : rows.length === 0 ? (
+            <Empty title="아직 등록된 반이 없습니다" body="상단의 반 추가 버튼으로 첫 반을 만들어 주세요." />
+          ) : (
+            <Empty title="검색 결과가 없습니다" body="필터를 줄이거나 검색어를 바꿔 다시 확인해 주세요." />
+          )}
         </section>
       </section>
     </main>
   );
 }
 
-function Summary({ label, value }: { label: string; value: string }) {
+function SmallStat({ label, value }: { label: string; value: string }) {
   return (
-    <div style={summaryCard}>
+    <span style={smallStat}>
       <span>{label}</span>
       <b>{value}</b>
-    </div>
+    </span>
   );
 }
 
@@ -307,8 +333,15 @@ function daysAgo(days: number) {
 const page: CSSProperties = { padding: 12, color: "var(--asc-text)", background: "var(--asc-bg-subtle)", minHeight: "100vh" };
 const container: CSSProperties = { display: "flex", flexDirection: "column", gap: 10 };
 const header: CSSProperties = { background: "var(--asc-surface)", border: "1px solid var(--asc-border)", borderRadius: "var(--asc-radius-lg)", padding: 12 };
-const summaryGrid: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(5, minmax(120px, 1fr))", gap: 8 };
-const summaryCard: CSSProperties = { background: "var(--asc-bg)", border: "1px solid var(--asc-border)", borderRadius: "var(--asc-radius-lg)", padding: 10, display: "flex", flexDirection: "column", gap: 4, minWidth: 0 };
+const headerLayout: CSSProperties = { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 20, minHeight: 78 };
+const headerText: CSSProperties = { minWidth: 0, flex: "1 1 auto" };
+const eyebrow: CSSProperties = { margin: "0 0 4px", color: "var(--asc-primary)", fontSize: 12, fontWeight: 900 };
+const titleRow: CSSProperties = { display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap" };
+const pageTitle: CSSProperties = { margin: 0, color: "var(--asc-text)", fontSize: 28, lineHeight: 1.15, fontWeight: 950, letterSpacing: 0 };
+const pageDescription: CSSProperties = { margin: "6px 0 0", color: "var(--asc-text-muted)", fontSize: 13, lineHeight: 1.35 };
+const compactStats: CSSProperties = { display: "flex", alignItems: "center", flexWrap: "wrap", gap: 0 };
+const headerActions: CSSProperties = { justifyContent: "flex-end", alignSelf: "start", flex: "0 0 auto" };
+const smallStat: CSSProperties = { display: "inline-flex", alignItems: "baseline", gap: 4, padding: "0 14px", borderLeft: "1px solid var(--asc-border-strong)", color: "var(--asc-text-muted)", fontSize: 12, fontWeight: 850, lineHeight: 1.2, whiteSpace: "nowrap" };
 const filterBar: CSSProperties = { display: "grid", gridTemplateColumns: "minmax(220px, 1fr) 120px 120px 150px 120px auto auto auto", gap: 6, alignItems: "center", background: "var(--asc-surface)", border: "1px solid var(--asc-border)", borderRadius: "var(--asc-radius-lg)", padding: 8 };
 const filterInput: CSSProperties = { height: 34, border: "1px solid var(--asc-border)", borderRadius: "var(--asc-radius-md)", padding: "0 9px", minWidth: 0, fontWeight: 750, color: "var(--asc-text)" };
 const filterSelect: CSSProperties = { ...filterInput, background: "var(--asc-bg)" };
@@ -319,6 +352,8 @@ const listPanel: CSSProperties = { background: "var(--asc-surface)", border: "1p
 const panelHead: CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 10 };
 const sectionTitle: CSSProperties = { margin: 0, fontSize: 18, fontWeight: 950 };
 const muted: CSSProperties = { margin: "4px 0 0", color: "var(--asc-text-muted)", fontSize: 12, fontWeight: 800 };
-const classGrid: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 9 };
+const tableWrap: CSSProperties = { overflowX: "auto", border: "1px solid var(--asc-border)", borderRadius: "var(--asc-radius-md)", background: "var(--asc-bg)" };
+const classTable: CSSProperties = { width: "100%", minWidth: 1160, borderCollapse: "collapse", tableLayout: "auto" };
+const th: CSSProperties = { background: "var(--asc-bg-subtle)", borderBottom: "1px solid var(--asc-border-strong)", padding: "10px 12px", color: "var(--asc-text-muted)", textAlign: "left", whiteSpace: "nowrap", fontSize: 12, fontWeight: 950 };
 const empty: CSSProperties = { border: "1px dashed var(--asc-border)", borderRadius: "var(--asc-radius-lg)", padding: 18, display: "grid", gap: 4, textAlign: "center", color: "var(--asc-text-muted)", fontWeight: 800, background: "var(--asc-bg-subtle)" };
 

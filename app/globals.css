@@ -785,3 +785,22 @@ textarea {
   .asc-toolbar,
   .asc-form-actions { align-items: stretch; flex-direction: column; }
 }
+
+.student-sheet-toolbar-button {
+  transition: background-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
+}
+
+.student-sheet-toolbar-button:hover:not(:disabled) {
+  background: #e3e5e8 !important;
+  color: #202124 !important;
+}
+
+.student-sheet-toolbar-button.is-active:hover:not(:disabled) {
+  background: #d2e3fc !important;
+  color: #174ea6 !important;
+}
+
+.student-sheet-toolbar-button:focus-visible {
+  outline: 2px solid #8ab4f8;
+  outline-offset: -2px;
+}

@@ -1,6 +1,6 @@
 "use client";
 
-import type { ClipboardEvent, CSSProperties, KeyboardEvent, MouseEvent } from "react";
+import type { ClipboardEvent, CSSProperties, KeyboardEvent, MouseEvent, ReactElement } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -246,6 +246,81 @@ function SortIndicator({ active, direction }: { active: boolean; direction: Sort
       <span style={sortTriangleUp} />
       <span style={sortTriangleDown} />
     </span>
+  );
+}
+
+
+type ToolbarIconName =
+  | "undo"
+  | "redo"
+  | "save"
+  | "settings"
+  | "columns"
+  | "check"
+  | "reset"
+  | "fillDown"
+  | "eraser"
+  | "addLesson"
+  | "allLessons"
+  | "fullscreen"
+  | "collapse"
+  | "panel"
+  | "border"
+  | "search";
+
+function ToolbarIcon({ name }: { name: ToolbarIconName }) {
+  const common = { fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round", strokeLinejoin: "round" } as const;
+  const icons: Record<ToolbarIconName, ReactElement> = {
+    undo: <path {...common} d="M9 7H4v5m.5-4.5A7 7 0 1 1 6.4 17" />,
+    redo: <path {...common} d="M15 7h5v5m-.5-4.5A7 7 0 1 0 17.6 17" />,
+    save: <path {...common} d="M5 4h11l3 3v13H5zM8 4v6h8M8 20v-6h8" />,
+    settings: <><circle {...common} cx="12" cy="12" r="3" /><path {...common} d="M19 12a7 7 0 0 0-.1-1l2-1.5-2-3.4-2.4 1a7 7 0 0 0-1.7-1L14.5 3h-4l-.3 3.1a7 7 0 0 0-1.7 1l-2.4-1-2 3.4L6.1 11a7 7 0 0 0 0 2l-2 1.5 2 3.4 2.4-1a7 7 0 0 0 1.7 1l.3 3.1h4l.3-3.1a7 7 0 0 0 1.7-1l2.4 1 2-3.4-2-1.5a7 7 0 0 0 .1-1Z" /></>,
+    columns: <><rect {...common} x="4" y="5" width="16" height="14" rx="1.5" /><path {...common} d="M9 5v14M15 5v14" /></>,
+    check: <path {...common} d="m5 12 4 4L19 6" />,
+    reset: <path {...common} d="M5 8a7 7 0 1 1 1 9.3M5 8v5h5" />,
+    fillDown: <><path {...common} d="M8 4h8v5H8zM12 9v9m-4-4 4 4 4-4" /></>,
+    eraser: <><path {...common} d="m4 15 8-8 6 6-5 5H7z" /><path {...common} d="M10 18h10" /></>,
+    addLesson: <><path {...common} d="M5 6h14M5 12h14M5 18h8" /><path {...common} d="M17 15v6M14 18h6" /></>,
+    allLessons: <><rect {...common} x="4" y="5" width="16" height="14" rx="1.5" /><path {...common} d="M4 10h16M4 15h16M9 5v14" /></>,
+    fullscreen: <><path {...common} d="M8 4H4v4M16 4h4v4M20 16v4h-4M4 16v4h4" /></>,
+    collapse: <><path {...common} d="M7 4v16M17 4v16M10 8l4 4-4 4" /></>,
+    panel: <><rect {...common} x="4" y="5" width="16" height="14" rx="1.5" /><path {...common} d="M14 5v14" /></>,
+    border: <><rect {...common} x="5" y="5" width="14" height="14" /><path {...common} d="M5 12h14M12 5v14" /></>,
+    search: <><circle {...common} cx="10.5" cy="10.5" r="5.5" /><path {...common} d="m15 15 5 5" /></>,
+  };
+
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true" focusable="false" style={toolbarSvgIcon}>
+      {icons[name]}
+    </svg>
+  );
+}
+
+function ToolbarIconButton({
+  icon,
+  title,
+  onClick,
+  disabled = false,
+  active = false,
+}: {
+  icon: ToolbarIconName;
+  title: string;
+  onClick?: () => void;
+  disabled?: boolean;
+  active?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={active ? "student-sheet-toolbar-button is-active" : "student-sheet-toolbar-button"}
+      style={{ ...toolbarIconButton, ...(active ? activeToolbarButton : {}), ...(disabled ? disabledUndoRedoButton : {}) }}
+      title={title}
+      aria-label={title}
+    >
+      <ToolbarIcon name={icon} />
+    </button>
   );
 }
 
@@ -847,7 +922,6 @@ export default function StudentLessonSpreadsheet({
     return parts.length > 0 ? parts.join(" · ") : "변경 없음";
   }, [dirtyCount, draftRowsWithContent.length, lessonConfigDirty]);
   const selectionLabel = formatActiveSelectionLabel(selectionMode, selection, selectedRowIdSet, selectedColumnIdSet, displayRows, gridColumns);
-  const hasClassSchedule = Boolean(selectedClassGroup && parseDaysOfWeek(selectedClassGroup).length > 0);
   const selectedColumn = gridColumns.find((column) => column.id === effectiveColumnSearchId);
   const selectedColumnLabel = selectedColumn ? columnLabel(selectedColumn) : "학생명";
   const searchTargetLabel = hasSelectionSearchScope ? "선택 범위" : isGlobalSearchScope ? "전체" : selectedColumnLabel;
@@ -2465,7 +2539,6 @@ export default function StudentLessonSpreadsheet({
         selectedClassGroup.daysOfWeek || selectedClassGroup.schedule || "요일 미정"
       }`
     : "반 선택 시 운영기간과 요일 기준으로 차시 자동 생성";
-  const scheduleSummaryStyle = selectedClassGroup && !hasClassSchedule ? warningText : undefined;
   const sheetHeight = isFullscreen ? "calc(100vh - 138px)" : "100%";
   const sheetZoomFactor = sheetZoom / 100;
   const zoomedTableWidth = zoomDimension(totalTableWidth(gridColumns), sheetZoomFactor);
@@ -2497,39 +2570,9 @@ export default function StudentLessonSpreadsheet({
     <div style={{ ...shell, ...(isFullscreen ? fullscreenShell : {}) }}>
       <div style={toolbar}>
         <div style={toolbarGroup}>
-          <button
-            type="button"
-            onClick={undoSheetChange}
-            disabled={!canUndo}
-            style={{ ...toolbarIconButton, ...(!canUndo ? disabledUndoRedoButton : {}) }}
-            title="되돌리기 (Ctrl+Z)"
-            aria-label="되돌리기"
-          >
-            {"\u21B6"}
-          </button>
-          <button
-            type="button"
-            onClick={redoSheetChange}
-            disabled={!canRedo}
-            style={{ ...toolbarIconButton, ...(!canRedo ? disabledUndoRedoButton : {}) }}
-            title="다시하기 (Ctrl+Y)"
-            aria-label="다시하기"
-          >
-            {"\u21B7"}
-          </button>
-          <button type="button" onClick={saveChanges} disabled={isPending || !hasPendingChanges} style={{ ...primaryButton, ...(isPending || !hasPendingChanges ? disabledUndoRedoButton : {}) }}>
-            저장
-          </button>
-        </div>
-
-        <span style={toolbarDivider} />
-
-        <div style={sheetMeta} title={scheduleSummary}>
-          <b style={sheetMetaStrong}>{selectedClassGroup ? selectedClassGroup.name : "전체 학생"}</b>
-          <span>{displayRows.length}/{rows.length}명</span>
-          <span>{visibleLessons.length}차시</span>
-          {changeSummary ? <span>{changeSummary}</span> : null}
-          <span style={{ ...sheetMetaSchedule, ...scheduleSummaryStyle }}>{scheduleSummary}</span>
+          <ToolbarIconButton icon="undo" title="되돌리기 (Ctrl+Z)" onClick={undoSheetChange} disabled={!canUndo} />
+          <ToolbarIconButton icon="redo" title="다시하기 (Ctrl+Y)" onClick={redoSheetChange} disabled={!canRedo} />
+          <ToolbarIconButton icon="save" title="저장" onClick={saveChanges} disabled={isPending || !hasPendingChanges} />
         </div>
 
         <span style={toolbarDivider} />
@@ -2559,17 +2602,14 @@ export default function StudentLessonSpreadsheet({
               </option>
             ))}
           </select>
-          {allTestsSelected ? <span style={testMetaText}>전체 시험</span> : selectedTest ? <span style={testMetaText}>{classTestMetaLabel(selectedTest, lessons)}</span> : null}
-          <button type="button" onClick={() => setTestPanelOpen(true)} disabled={!effectiveClassGroupId} style={toolbarButton}>
-            시험 관리
-          </button>
+          <ToolbarIconButton icon="settings" title="시험 관리" onClick={() => setTestPanelOpen(true)} disabled={!effectiveClassGroupId} />
           {classTests.length === 0 && effectiveClassGroupId ? <span style={warningText}>시험 관리에서 먼저 등록하세요.</span> : null}
         </div>
 
         <span style={toolbarDivider} />
 
-        <div style={zoomControl} aria-label="시트 확대 축소">
-          <button type="button" onClick={() => stepSheetZoom(-1)} disabled={sheetZoom <= sheetZoomLevels[0]} style={{ ...zoomButton, ...(sheetZoom <= sheetZoomLevels[0] ? disabledZoomButton : {}) }} title="시트 축소" aria-label="시트 축소">-</button>
+        <div style={zoomControl} aria-label="배율 직접 입력">
+          <button type="button" onClick={() => stepSheetZoom(-1)} disabled={sheetZoom <= sheetZoomLevels[0]} className="student-sheet-toolbar-button" style={{ ...toolbarIconButton, ...(sheetZoom <= sheetZoomLevels[0] ? disabledZoomButton : {}) }} title="시트 축소" aria-label="시트 축소">-</button>
           <div style={zoomValueBox} title="배율 직접 입력">
             <input
               value={sheetZoomInput}
@@ -2588,13 +2628,13 @@ export default function StudentLessonSpreadsheet({
             />
             <span style={zoomPercentMark}>%</span>
           </div>
-          <button type="button" onClick={() => stepSheetZoom(1)} disabled={sheetZoom >= sheetZoomLevels[sheetZoomLevels.length - 1]} style={{ ...zoomButton, ...(sheetZoom >= sheetZoomLevels[sheetZoomLevels.length - 1] ? disabledZoomButton : {}) }} title="시트 확대" aria-label="시트 확대">+</button>
+          <button type="button" onClick={() => stepSheetZoom(1)} disabled={sheetZoom >= sheetZoomLevels[sheetZoomLevels.length - 1]} className="student-sheet-toolbar-button" style={{ ...toolbarIconButton, ...(sheetZoom >= sheetZoomLevels[sheetZoomLevels.length - 1] ? disabledZoomButton : {}) }} title="시트 확대" aria-label="시트 확대">+</button>
         </div>
 
+        <span style={toolbarDivider} />
+
         <div ref={columnVisibilityRef} style={columnVisibilityMenuWrap}>
-          <button type="button" onClick={() => setColumnVisibilityOpen((current) => !current)} style={{ ...toolbarButton, ...(hiddenColumnCount > 0 || columnVisibilityOpen ? activeToolbarButton : {}) }} title="학생 정보 열 표시/숨김" aria-label="열 보기">
-            {hiddenColumnCount > 0 ? `열 보기 - 숨김 ${hiddenColumnCount}` : "열 보기"}
-          </button>
+          <ToolbarIconButton icon="columns" title={hiddenColumnCount > 0 ? `열 보기 - 숨김 ${hiddenColumnCount}` : "열 보기"} onClick={() => setColumnVisibilityOpen((current) => !current)} active={hiddenColumnCount > 0 || columnVisibilityOpen} />
           {columnVisibilityOpen && (
             <div style={columnVisibilityPanel} role="menu" aria-label="열 보기">
               <div style={columnVisibilityTitle}>열 보기</div>
@@ -2617,9 +2657,7 @@ export default function StudentLessonSpreadsheet({
           )}
         </div>
 
-        <span style={toolbarDivider} />
-
-        <ColorPaletteDropdown label="채우기" title="채우기 색상" open={fillPaletteOpen} setOpen={setFillPaletteOpen} currentColor={formatDraft.fill ?? "#ffffff"} palette={fillPalette} onSelect={(value) => updateFormat({ fill: value })} menuRef={colorMenuRef} />
+        <ColorPaletteDropdown label="" title="채우기 색상" open={fillPaletteOpen} setOpen={setFillPaletteOpen} currentColor={formatDraft.fill ?? "#ffffff"} palette={fillPalette} onSelect={(value) => updateFormat({ fill: value })} menuRef={colorMenuRef} />
         <select value={formatDraft.fontFamily ?? "Arial"} onChange={(event) => updateFormat({ fontFamily: event.target.value })} style={compactSelect} aria-label="글꼴">
           <option value="Arial">Arial</option>
           <option value="Inter">Inter</option>
@@ -2628,40 +2666,38 @@ export default function StudentLessonSpreadsheet({
           <option value="monospace">Mono</option>
         </select>
         <input type="number" min={10} max={24} value={formatDraft.fontSize ?? "13"} onChange={(event) => updateFormat({ fontSize: event.target.value })} style={sizeInput} aria-label="글자 크기" />
-        <button type="button" onClick={() => updateFormat({ bold: !formatDraft.bold })} style={formatButton(formatDraft.bold)}>B</button>
-        <button type="button" onClick={() => updateFormat({ italic: !formatDraft.italic })} style={formatButton(formatDraft.italic)}>I</button>
-        <button type="button" onClick={() => updateFormat({ underline: !formatDraft.underline })} style={formatButton(formatDraft.underline)}>U</button>
-        <button type="button" onClick={() => updateFormat({ border: !formatDraft.border })} style={formatButton(formatDraft.border)}>선</button>
+        <button type="button" onClick={() => updateFormat({ bold: !formatDraft.bold })} className={formatDraft.bold ? "student-sheet-toolbar-button is-active" : "student-sheet-toolbar-button"} style={formatButton(formatDraft.bold)} title="Bold" aria-label="Bold">B</button>
+        <button type="button" onClick={() => updateFormat({ italic: !formatDraft.italic })} className={formatDraft.italic ? "student-sheet-toolbar-button is-active" : "student-sheet-toolbar-button"} style={formatButton(formatDraft.italic)} title="Italic" aria-label="Italic">I</button>
+        <button type="button" onClick={() => updateFormat({ underline: !formatDraft.underline })} className={formatDraft.underline ? "student-sheet-toolbar-button is-active" : "student-sheet-toolbar-button"} style={formatButton(formatDraft.underline)} title="Underline" aria-label="Underline">U</button>
+        <ToolbarIconButton icon="border" title="테두리" onClick={() => updateFormat({ border: !formatDraft.border })} active={Boolean(formatDraft.border)} />
         <select value={formatDraft.align ?? "center"} onChange={(event) => updateFormat({ align: event.target.value as CellStyle["align"] })} style={compactSelect} aria-label="정렬">
           <option value="left">왼쪽</option>
           <option value="center">가운데</option>
           <option value="right">오른쪽</option>
         </select>
-        <button type="button" onClick={() => applyStyleToSelection(formatDraft)} style={toolbarButton} title="현재 서식 적용">적용</button>
-        <button type="button" onClick={clearSelectionStyles} style={toolbarButton} title="선택 서식 초기화">초기화</button>
+        <ToolbarIconButton icon="check" title="현재 서식 적용" onClick={() => applyStyleToSelection(formatDraft)} />
+        <ToolbarIconButton icon="reset" title="선택 서식 초기화" onClick={clearSelectionStyles} />
 
         <span style={toolbarDivider} />
 
-        <button type="button" onClick={fillSelectionFromAnchor} style={toolbarButton}>채우기</button>
-        <button type="button" onClick={() => applyValueToSelection("")} style={toolbarButton}>지우기</button>
-        <button type="button" onClick={addLesson} style={toolbarButton}>차시 추가</button>
-        <button type="button" onClick={() => setVisibleLessonIds(lessons.map((lesson) => lesson.id))} style={toolbarButton}>전체 차시</button>
-        <button type="button" onClick={() => setIsFullscreen((current) => !current)} style={{ ...toolbarButton, ...(isFullscreen ? activeToolbarButton : {}) }} title={isFullscreen ? "ESC로도 닫을 수 있습니다" : "스프레드시트를 화면 전체로 보기"}>
-          {isFullscreen ? "전체화면 종료" : "전체화면"}
-        </button>
-        <button type="button" onClick={() => setLessonOnlyView((current) => !current)} style={{ ...toolbarButton, ...(lessonOnlyView ? activeToolbarButton : {}) }}>
-          {lessonOnlyView ? "전체 정보" : "차시만"}
-        </button>
-        <button type="button" onClick={() => setLessonPanelOpen((current) => !current)} style={{ ...toolbarButton, ...(lessonPanelOpen ? activeToolbarButton : {}) }}>
-          {lessonPanelOpen ? "차시 닫기" : "차시 선택"}
-        </button>
+        <ToolbarIconButton icon="fillDown" title="첫 셀 값으로 채우기" onClick={fillSelectionFromAnchor} />
+        <ToolbarIconButton icon="eraser" title="선택 범위 지우기" onClick={() => applyValueToSelection("")} />
+        <ToolbarIconButton icon="addLesson" title="차시 추가" onClick={addLesson} />
+        <ToolbarIconButton icon="allLessons" title="전체 차시 보기" onClick={() => setVisibleLessonIds(lessons.map((lesson) => lesson.id))} />
+        <ToolbarIconButton icon="fullscreen" title={isFullscreen ? "ESC로도 닫을 수 있습니다" : "스프레드시트를 화면 전체로 보기"} onClick={() => setIsFullscreen((current) => !current)} active={isFullscreen} />
+        <ToolbarIconButton icon="collapse" title={lessonOnlyView ? "전체 정보 보기" : "차시만 보기"} onClick={() => setLessonOnlyView((current) => !current)} active={lessonOnlyView} />
+        <ToolbarIconButton icon="panel" title={lessonPanelOpen ? "차시 선택 닫기" : "차시 선택"} onClick={() => setLessonPanelOpen((current) => !current)} active={lessonPanelOpen} />
 
         <span style={toolbarDivider} />
 
-        <span style={selectedColumnPill}>검색: {searchTargetLabel}</span>
-        <input ref={searchInputRef} value={columnSearch} onChange={(event) => setColumnSearch(event.target.value)} placeholder={hasSelectionSearchScope ? "선택 범위" : isGlobalSearchScope ? "전체 검색" : "선택 열"} style={toolbarInput} autoComplete="off" />
-        {columnSearch && <button type="button" onClick={() => setColumnSearch("")} style={toolbarButton}>검색 지우기</button>}
+        <span style={selectedColumnPill} title={searchTargetLabel}><ToolbarIcon name="search" />{searchTargetLabel}</span>
+        <input ref={searchInputRef} value={columnSearch} onChange={(event) => setColumnSearch(event.target.value)} placeholder={hasSelectionSearchScope ? "선택 범위에서 검색" : isGlobalSearchScope ? "전체 검색" : "선택한 열에서 검색"} style={toolbarInput} autoComplete="off" />
+        {columnSearch && <ToolbarIconButton icon="eraser" title="검색 지우기" onClick={() => setColumnSearch("")} />}
 
+        <div style={sheetMeta} title={scheduleSummary}>
+          <b style={sheetMetaStrong}>{selectedClassGroup ? selectedClassGroup.name : "전체 학생"}</b>
+          {changeSummary ? <span>{changeSummary}</span> : null}
+        </div>
         <span style={selectionBadge}>{selectionLabel}</span>
         {statusText && <span style={{ ...saveStatus, ...(isPending ? pendingStatus : {}) }}>{statusText}</span>}
       </div>
@@ -3558,10 +3594,6 @@ function classTestOptionLabel(test: ClassTestExamOption, lessons: Lesson[]) {
   return test.displayName + " / " + "\uC815\uAE30 \uC2DC\uD5D8";
 }
 
-function classTestMetaLabel(test: ClassTestExamOption, lessons: Lesson[]) {
-  if (test.type === "SINGLE") return "\uB2E8\uC77C \uC2DC\uD5D8 / " + classTestDateLabel(test, lessons);
-  return "\uC815\uAE30 \uC2DC\uD5D8";
-}
 
 function classTestPanelSummaryLabel(test: ClassTestExamOption, lessons: Lesson[]) {
   if (test.type === "SINGLE") return test.displayName + " / " + classTestDateLabel(test, lessons);
@@ -4707,6 +4739,7 @@ function ColorPaletteDropdown({
       <button
         type="button"
         onClick={() => setOpen(!open)}
+        className="student-sheet-toolbar-button"
         style={colorTrigger}
         aria-haspopup="menu"
         aria-expanded={open}
@@ -4714,7 +4747,7 @@ function ColorPaletteDropdown({
       >
         <span style={rainbowIcon} />
         <span style={currentColorDot(currentColor)} />
-        <span>{label}</span>
+        {label ? <span>{label}</span> : null}
       </button>
       {open && (
         <div style={swatchPanel} role="menu" aria-label={title}>
@@ -5014,8 +5047,17 @@ const toolbar: CSSProperties = {
 const toolbarGroup: CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
-  gap: 4,
-  flexWrap: "wrap",
+  gap: 2,
+  flexWrap: "nowrap",
+  flex: "0 0 auto",
+};
+
+const toolbarDivider: CSSProperties = {
+  width: 1,
+  height: 22,
+  margin: "0 3px",
+  background: "#d6dbe3",
+  flex: "0 0 auto",
 };
 
 const sheetMeta: CSSProperties = {
@@ -5041,15 +5083,6 @@ const sheetMetaStrong: CSSProperties = {
   maxWidth: 150,
 };
 
-const sheetMetaSchedule: CSSProperties = {
-  display: "inline-block",
-  maxWidth: 190,
-  overflow: "hidden",
-  textOverflow: "ellipsis",
-  whiteSpace: "nowrap",
-  color: "#6b7280",
-};
-
 const warningText: CSSProperties = {
   color: "#b45309",
   fontWeight: 700,
@@ -5070,6 +5103,11 @@ const toolbarButton: CSSProperties = {
   whiteSpace: "nowrap",
   cursor: "pointer",
   flex: "0 0 auto",
+};
+
+const toolbarSvgIcon: CSSProperties = {
+  display: "block",
+  pointerEvents: "none",
 };
 
 const toolbarIconButton: CSSProperties = {
@@ -5098,17 +5136,6 @@ const zoomControl: CSSProperties = {
   overflow: "hidden",
   background: "transparent",
   flex: "0 0 auto",
-};
-
-const zoomButton: CSSProperties = {
-  width: 28,
-  height: 28,
-  border: 0,
-  background: "transparent",
-  color: "#3c4043",
-  fontSize: 14,
-  fontWeight: 950,
-  cursor: "pointer",
 };
 
 const zoomValueBox: CSSProperties = {
